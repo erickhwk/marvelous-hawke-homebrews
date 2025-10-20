@@ -1,3 +1,6 @@
 {
-  "MHH.Title": "Marvelous Hawke Homebrews"
+  "MHH.Title": "Marvelous Hawke Homebrews",
+  "MHH.Toggle.Label.Normal": "Normal",
+  "MHH.Toggle.Label.Elite": "Elite ON",
+  "MHH.Toggle.Label.Weak": "Weak ON"
 }

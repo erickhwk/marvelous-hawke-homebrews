@@ -1,1 +1,9 @@
-/* Marvelous Hawke Homebrews base styles */
+/* Marvelous Hawke Homebrews base styles *//* Emphasize the toggle button a bit */
+
+.mhh-elite-weak-toggle i {
+  margin-right: 4px;
+}
+.mhh-elite-weak-toggle {
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
