@@ -19,7 +19,7 @@
     { "id": "dnd5e", "type": "system", "compatibility": { "minimum": "3" } }
   ],
   "url": "https://github.com/erickhwk/marvelous-hawke-homebrews",
-  "manifest": "https://raw.githubusercontent.com/erickhwk/marvelous-hawke-homebrews/main/module.json",
+  "manifest": "https://raw.githubusercontent.com/erickhwk/marvelous-hawke-homebrews/refs/heads/main/module.json",
   "download": "https://github.com/erickhwk/marvelous-hawke-homebrews/archive/refs/heads/main.zip",
   "license": "MIT"
 }

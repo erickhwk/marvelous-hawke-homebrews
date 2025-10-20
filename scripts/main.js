@@ -1,52 +1,63 @@
 // scripts/main.js
 const MODULE_ID = "marvelous-hawke-homebrews";
-const FLAG_SCOPE = MODULE_ID;       // where we store flags
-const FLAG_MODE  = "ewMode";        // "normal" | "elite" | "weak"
+const FLAG_SCOPE = MODULE_ID;
+const FLAG_MODE  = "ewMode"; // "normal" | "elite" | "weak"
 
 Hooks.once("init", () => {
-  console.log("Marvelous Hawke Homebrews | init");
+  console.log("[MHH] init");
 });
 
 Hooks.once("ready", () => {
-  console.log("Marvelous Hawke Homebrews | ready");
+  console.log("[MHH] ready");
 });
 
 /**
- * Inject a header button into Actor sheets to toggle Elite/Weak/Normal.
- * This hook is provided by most systems (including dnd5e) that use ApplicationV2-based sheets.
+ * Robustly inject a header button into any Actor sheet (ApplicationV2 or themed sheets).
+ * We use render-time DOM injection instead of getActorSheetHeaderButtons to ensure visibility.
  */
-Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
-  const actor = sheet.actor;
-  if (!actor) return;
+Hooks.on("renderActorSheet", async (sheet, html) => {
+  try {
+    const actor = sheet.actor;
+    if (!actor) return;
 
-  // Read current mode from flags
-  const mode = actor.getFlag(FLAG_SCOPE, FLAG_MODE) ?? "normal";
-  const nextMode = { normal: "elite", elite: "weak", weak: "normal" }[mode];
+    // Find the header actions container (V2) or fallback
+    const root = html[0] ?? html; // html can be jQuery or Element
+    const actions =
+      root.querySelector(".window-header .header-actions") ||
+      root.querySelector(".window-header .window-controls") ||
+      root.querySelector(".header-actions") ||
+      root.querySelector(".window-controls");
 
-  // Choose label and icon
-  const label = mode === "elite" ? "Elite ON"
-               : mode === "weak" ? "Weak ON"
-               : "Normal";
-  const icon  = "fas fa-arrows-rotate";
+    if (!actions) return; // header container not found
 
-  // Insert our button at the left of the header
-  buttons.unshift({
-    label,
-    class: "mhh-elite-weak-toggle",
-    icon,
-    onclick: async () => {
-      await setEliteWeakMode(actor, nextMode);
+    // Avoid duplicates on re-render
+    if (actions.querySelector(".mhh-elite-weak-toggle")) return;
+
+    // Read mode and compute next
+    const mode = actor.getFlag(FLAG_SCOPE, FLAG_MODE) ?? "normal";
+    const next = { normal: "elite", elite: "weak", weak: "normal" }[mode];
+    const label = mode === "elite" ? "Elite ON" : mode === "weak" ? "Weak ON" : "Normal";
+
+    // Build the button
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "mhh-elite-weak-toggle";
+    btn.title = "Cycle Elite / Weak / Normal";
+    btn.innerHTML = `<i class="fas fa-arrows-rotate"></i><span>${label}</span>`;
+
+    // Click handler
+    btn.addEventListener("click", async (ev) => {
+      ev.preventDefault();
+      const current = actor.getFlag(FLAG_SCOPE, FLAG_MODE) ?? "normal";
+      const nextMode = { normal: "elite", elite: "weak", weak: "normal" }[current];
+      await actor.setFlag(FLAG_SCOPE, FLAG_MODE, nextMode);
       ui.notifications?.info(`${actor.name}: mode set to ${nextMode.toUpperCase()}`);
-      // Re-render the sheet so the header button reflects the new label
-      sheet.render(false);
-    }
-  });
-});
+      sheet.render(false); // refresh header label
+    });
 
-/**
- * Persist the chosen mode in actor flags.
- * Effects and mechanics will be applied in the next step.
- */
-async function setEliteWeakMode(actor, mode) {
-  await actor.setFlag(FLAG_SCOPE, FLAG_MODE, mode);
-}
+    // Insert as the first header action (leftmost)
+    actions.prepend(btn);
+  } catch (err) {
+    console.error("[MHH] renderActorSheet injection failed:", err);
+  }
+});
