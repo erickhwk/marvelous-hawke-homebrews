@@ -1,12 +1,29 @@
 {
   "id": "marvelous-hawke-homebrews",
-  "title": "Marvelous Hawke's Homebrews",
+  "title": "Marvelous Hawke Homebrews",
+  "description": "Suite de homebrews para D&D5e.",
   "version": "0.0.2",
-  "compatibility": { "minimum": "12", "verified": "13" },
+
+  "compatibility": { "minimum": 12, "verified": 13 },
+
+  "authors": [{ "name": "Hawke", "url": "https://github.com/erickhwk" }],
+
+  "relationships": {
+    "systems": [
+      {
+        "id": "dnd5e",
+        "compatibility": {
+          "minimum": "5.1.0",
+          "verified": "5.1.10"
+        }
+      }
+    ]
+  },
+
   "esmodules": ["scripts/main.js"],
   "styles": [],
   "languages": [],
-  "packs": [],
+
   "url": "https://github.com/erickhwk/marvelous-hawke-homebrews",
   "manifest": "https://raw.githubusercontent.com/erickhwk/marvelous-hawke-homebrews/refs/heads/main/module.json",
   "download": "https://github.com/erickhwk/marvelous-hawke-homebrews/archive/refs/heads/main.zip"
