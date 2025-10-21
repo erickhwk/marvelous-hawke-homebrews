@@ -1,4 +1,4 @@
-import { MODULE_ID, FLAGS, EFFECT, PROFILES, V } from "../../core/constants.js";
+import { MODULE_ID, FLAGS, EFFECT, PROFILES, V, CR_STEPS, CR_TO_VALUE } from "../../core/constants.js";
 import { getFlag, setFlag, path, updateSafe } from "../../core/utils.js";
 
 const sign = (n) => (Number(n) >= 0 ? `+${Number(n)}` : `${Number(n)}`);
@@ -13,6 +13,7 @@ export function readModeFrom(actor, tokenDoc) {
   return m ?? "default";
 }
 
+/** ---------------- HP base ---------------- */
 async function ensureBaseHp(actor) {
   const base = await getFlag(actor, FLAGS.BASE_HP);
   const current = path(actor, "system.attributes.hp.max");
@@ -21,6 +22,7 @@ async function ensureBaseHp(actor) {
   }
 }
 
+/** ---------------- Nomes base ---------------- */
 async function ensureBaseNames(actor, tokenDoc) {
   const baseActor = await getFlag(actor, FLAGS.BASE_ACTOR_NAME);
   if (!baseActor) await setFlag(actor, FLAGS.BASE_ACTOR_NAME, actor.name);
@@ -40,6 +42,52 @@ function computeAdjustedMax(base, profile) {
   return next;
 }
 
+/** ---------------- CR base + helpers (sem XP) ---------------- */
+async function ensureBaseCR(actor) {
+  const baseCR = await getFlag(actor, FLAGS.BASE_CR);
+  if (baseCR === undefined) {
+    const currentCRRaw = path(actor, "system.details.cr"); // pode ser número ou string
+    await setFlag(actor, FLAGS.BASE_CR, crKeyFromValue(currentCRRaw));
+  }
+}
+
+function crKeyFromValue(v) {
+  if (v == null) return "0";
+  if (typeof v === "string") {
+    if (CR_STEPS.includes(v)) return v;
+    const asNum = Number(v);
+    if (!Number.isNaN(asNum)) return crKeyFromValue(asNum);
+    return "0";
+  }
+  // number
+  if (v < 0.1875) return "0";           // 0
+  if (v < 0.3125) return "1/8";         // ~0.125
+  if (v < 0.375)  return "1/4";         // ~0.25
+  if (v < 0.75)   return "1/2";         // ~0.5
+  const n = Math.max(1, Math.round(v));
+  return String(Math.min(n, 30));
+}
+
+function stepCR(crKey, delta) {
+  const i = CR_STEPS.indexOf(crKey);
+  if (i < 0) return crKey;
+  return CR_STEPS[Math.min(Math.max(i + delta, 0), CR_STEPS.length - 1)];
+}
+
+async function applyCR(actor, mode) {
+  await ensureBaseCR(actor);
+
+  const baseCRKey = (await getFlag(actor, FLAGS.BASE_CR)) ?? crKeyFromValue(path(actor, "system.details.cr"));
+  let nextCRKey = baseCRKey;
+  if (mode === "elite") nextCRKey = stepCR(baseCRKey, +1);
+  if (mode === "weak")  nextCRKey = stepCR(baseCRKey, -1);
+
+  const nextCRValue = CR_TO_VALUE[nextCRKey] ?? 0;
+
+  await updateSafe(actor, { "system.details.cr": nextCRValue });
+}
+
+/** ---------------- AEs / HP / Nomes ---------------- */
 export async function applyAdjustmentEffect(actor, mode) {
   const prev = actor.effects.find(e => e.getFlag(MODULE_ID, FLAGS.AE_MARK) === true);
   if (prev) await prev.delete();
@@ -110,9 +158,11 @@ async function setDisplayNames(actor, tokenDoc, mode) {
   if (updates.length) await Promise.allSettled(updates);
 }
 
+/** ---------------- Orquestra tudo ---------------- */
 export async function applyAdjustment(actor, mode, tokenDoc) {
   if (!["default","elite","weak"].includes(mode)) mode = "default";
   await applyAdjustmentEffect(actor, mode);
   await applyMaxHp(actor, mode);
+  await applyCR(actor, mode);
   await setDisplayNames(actor, tokenDoc, mode);
 }
