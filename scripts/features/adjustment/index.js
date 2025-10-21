@@ -5,10 +5,11 @@ import { MHHAdjustmentAppV2 } from "./app.js";
 
 export function registerAdjustmentFeature() {
 
-  // Reaplicar ajustes salvos/migrar (se quiser pode mover para um “core/hooks.js”)
+  // Reaplicar ajustes salvos/migrar (apenas NPCs)
   Hooks.once("ready", async () => {
     try {
-      for (const actor of game.actors ?? []) {
+      const actors = (game.actors ?? []).filter(a => a?.type === "npc");
+      for (const actor of actors) {
         const v = await actor.getFlag(MODULE_ID, FLAGS.MODE);
         if (v === "normal") await actor.setFlag(MODULE_ID, FLAGS.MODE, "default");
         const mode = (await actor.getFlag(MODULE_ID, FLAGS.MODE)) ?? "default";
@@ -19,12 +20,14 @@ export function registerAdjustmentFeature() {
     }
   });
 
-  // Se o AE for removido manualmente, volta para default
+  // Se o AE for removido manualmente, volta para default (apenas NPCs)
   Hooks.on("deleteActiveEffect", async (effect) => {
     try {
       if (effect?.parent?.documentName !== "Actor") return;
-      if (!effect.getFlag(MODULE_ID, "mhhAdjustmentEffect")) return;
       const actor = effect.parent;
+      if (actor?.type !== "npc") return;
+      if (!effect.getFlag(MODULE_ID, "mhhAdjustmentEffect")) return;
+
       await actor.setFlag(MODULE_ID, FLAGS.MODE, "default");
       await applyAdjustment(actor, "default", null);
       ui.notifications?.warn(`${actor.name}: Adjustment effect removed — restored to DEFAULT.`);
@@ -33,11 +36,12 @@ export function registerAdjustmentFeature() {
     }
   });
 
-  // Header control V2
+  // Header control V2 (apenas NPCs)
   Hooks.on("getHeaderControlsActorSheetV2", (app, controls) => {
     try {
       const { actor, tokenDoc } = actorFromSheetApp(app);
       if (!actor) return;
+      if (actor.type !== "npc") return; // <- restrição a NPCs
       if (controls.some(c => c.class?.includes("mhh-elite-weak-toggle"))) return;
 
       const current = readModeFrom(actor, tokenDoc);

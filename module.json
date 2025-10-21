@@ -1,10 +1,10 @@
 {
   "id": "marvelous-hawke-homebrews",
-  "title": "Marvelous Hawke Homebrews",
+  "title": "Marvelous Hawke's Homebrews",
   "description": "Suite de homebrews para D&D5e.",
-  "version": "0.0.2",
+  "version": "0.0.3",
 
-  "compatibility": { "minimum": 12, "verified": 13 },
+  "compatibility": { "minimum": 13, "verified": 13 },
 
   "authors": [{ "name": "Hawke", "url": "https://github.com/erickhwk" }],
 
