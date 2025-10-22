@@ -1,13 +1,13 @@
 import { MODULE_ID } from "./constants.js";
 
 export function registerSettings() {
-  // Ex.: hard-core mode (descomente quando for usar)
-  // game.settings.register(MODULE_ID, "hardcore", {
-  //   name: "Hard-core Adjustment",
-  //   hint: "Use stronger modifiers for Elite/Weak.",
-  //   scope: "world",
-  //   config: true,
-  //   default: false,
-  //   type: Boolean
-  // });
+  // NEW: Enable/disable Flanking globally
+  game.settings.register(MODULE_ID, "enableFlanking", {
+    name: "Enable Flanking",
+    hint: "If enabled, attackers get +2 to hit when an ally is exactly opposite the target with clear lines (no wall/terrain blocking). Applies only during attack rolls.",
+    scope: "world",
+    config: true,
+    default: true,
+    type: Boolean
+  });
 }

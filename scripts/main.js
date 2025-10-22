@@ -1,9 +1,11 @@
 import { registerSettings } from "./core/settings.js";
 import { registerAdjustmentFeature } from "./features/adjustment/index.js";
+import { registerFlankingFeature } from "./features/flanking/index.js";
+
 
 Hooks.once("init", () => {
   console.log("[MHH] init");
-  registerSettings();         // onde você colocará o “hard-core mode” depois
+  registerSettings();
 });
 
 Hooks.once("ready", async () => {
@@ -12,4 +14,4 @@ Hooks.once("ready", async () => {
 
 // Registrar as features (cada uma cuida dos próprios hooks)
 registerAdjustmentFeature();
-// ex.: registerFlankingFeature(); registerWoundedFeature(); etc.
+registerFlankingFeature();
