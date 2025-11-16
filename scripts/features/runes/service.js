@@ -236,15 +236,16 @@ export async function applyRuneEffectsToItem(item) {
     }
   }
 
-  // MVP: assume base 0. Se não tiver nenhuma precision, campo fica vazio.
+  // base 0: se não tiver nenhuma precision, campo fica vazio
   data.attack.bonus = precisionBonus ? String(precisionBonus) : "";
 
   /* ---------- DAMAGE: bônus fixo na 1ª parte ---------- */
 
-  const parts = Array.isArray(data.damage.parts)
+  let parts = Array.isArray(data.damage.parts)
     ? foundry.utils.duplicate(data.damage.parts)
     : [];
 
+  // garante uma parte base de dano
   if (!parts[0]) {
     parts[0] = {
       number: 1,
@@ -267,30 +268,48 @@ export async function applyRuneEffectsToItem(item) {
 
   const elementalParts = [];
   for (const r of runes) {
-    if (r?.runeSubtype === "elemental") {
-      const die  = tierToDie(r.runeTier);
-      const type = r.runeDamageType || "fire";
+    if (r?.runeSubtype !== "elemental") continue;
 
-      const base = foundry.utils.duplicate(parts[0]);
-      base.number       = 1;
-      base.denomination = die;
-      base.bonus        = "";
-      base.types        = [type];
+    const die      = tierToDie(r.runeTier);
+    const elemType = r.runeDamageType || "fire";
 
-      elementalParts.push(base);
+    // clona a primeira parte pra manter o formato exato que o sistema espera
+    const base = foundry.utils.duplicate(parts[0]);
+
+    base.number       = 1;
+    base.denomination = die;
+    base.bonus        = "";
+
+    // Ajuste esperto pra diferentes esquemas de "types"
+    if (Array.isArray(base.types) && base.types.length) {
+      const first = base.types[0];
+
+      if (typeof first === "string") {
+        // esquema simples: array de strings
+        base.types = [elemType];
+      } else if (typeof first === "object") {
+        // esquema objeto: mantemos a estrutura mas trocamos o tipo
+        base.types = base.types.map((t, i) => {
+          const copy = foundry.utils.duplicate(t);
+          if (i === 0) {
+            // nomes variam de sistema pra sistema, então tentamos alguns campos comuns
+            if ("type" in copy) copy.type = elemType;
+            if ("damageType" in copy) copy.damageType = elemType;
+            if ("id" in copy) copy.id = elemType;
+          }
+          return copy;
+        });
+      }
+    } else {
+      // se não tinha nada, usa array simples de string
+      base.types = [elemType];
     }
+
+    elementalParts.push(base);
   }
 
+  // junta tudo: parte base (com bonus) + partes elementais
   data.damage.parts = [...parts, ...elementalParts];
-
-  /* ---------- limpar flags de base se não houver mais runas ---------- */
-
-  if (!runes.length) {
-    // se quiser, pode simplesmente ignorar isso;
-    // mantive só pra não deixar lixo se você já vinha usando base* antes.
-    await item.unsetFlag(MODULE_ID, "baseAttackBonus");
-    await item.unsetFlag(MODULE_ID, "baseDamageBonus");
-  }
 
   all[id] = data;
 
@@ -308,4 +327,5 @@ export async function applyRuneEffectsToItem(item) {
     "system.activities": all,
   });
 }
+
 
