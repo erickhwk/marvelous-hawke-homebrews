@@ -5,12 +5,18 @@ import { MODULE_ID } from "../../core/constants.js";
 /**
  * Estrutura esperada em item.flags[MODULE_ID].runes:
  * [
- *   { runeCategory: "offensive", runeSubtype: "precision", runeTier: "lesser" },
+ *   {
+ *     runeCategory: "offensive",
+ *     runeSubtype: "precision" | "damage" | "elemental",
+ *     runeTier: "lesser" | "greater" | "major",
+ *     runeDamageType?: "fire" | "cold" | "acid" | "lightning" | ...
+ *   },
  *   ...
  * ]
  *
- * Também guardamos:
- * item.flags[MODULE_ID].baseAttackBonus → bônus base original da activity de ataque
+ * Flags extras no item:
+ * - baseAttackBonus  → bônus base original em attack.bonus
+ * - baseDamageBonus  → bônus base original em damage.parts[0].bonus
  */
 
 /* ---------------- Helpers de flags ---------------- */
@@ -31,6 +37,15 @@ async function ensureBaseAttackBonus(item, baseValue) {
   const existing = await item.getFlag(MODULE_ID, "baseAttackBonus");
   if (existing === undefined) {
     await item.setFlag(MODULE_ID, "baseAttackBonus", baseValue);
+    return baseValue;
+  }
+  return Number(existing) || 0;
+}
+
+async function ensureBaseDamageBonus(item, baseValue) {
+  const existing = await item.getFlag(MODULE_ID, "baseDamageBonus");
+  if (existing === undefined) {
+    await item.setFlag(MODULE_ID, "baseDamageBonus", baseValue);
     return baseValue;
   }
   return Number(existing) || 0;
@@ -58,6 +73,19 @@ function tierToBonus(tier) {
   }
 }
 
+/**
+ * lesser → d4, greater → d6, major → d8
+ * usado para runas elementais
+ */
+function tierToDie(tier) {
+  switch (tier) {
+    case "greater": return "d6";
+    case "major":   return "d8";
+    case "lesser":
+    default:        return "d4";
+  }
+}
+
 /* ---------------- Activities helpers ---------------- */
 
 /**
@@ -70,10 +98,6 @@ function getActivitiesSource(item) {
 
 /**
  * Acha a activity de ataque no _source.
- * Retorna { id, data, all } onde:
- * - id   → ID da activity ("BFZXotvvF4YaAKeT")
- * - data → objeto da activity (editável)
- * - all  → objeto completo de activities (pra regravar depois)
  */
 function getPrimaryAttackActivitySource(item) {
   const all = getActivitiesSource(item);
@@ -82,7 +106,6 @@ function getPrimaryAttackActivitySource(item) {
   for (const [id, data] of entries) {
     if (!data) continue;
     if (data.type === "attack") {
-      console.log("[MHH][Runes] usando activity de ataque", id, data);
       return { id, data, all };
     }
   }
@@ -160,56 +183,93 @@ export async function removeRuneFromItem(item, runeData) {
 
 /* ---------------- Aplicar efeitos nas Activities ---------------- */
 
-/**
- * Recalcula as Activities da arma com base nas runas instaladas.
- *
- * MVP: só Precision Rune
- * - soma bônus de ataque em attack.bonus
- * - preserva o bônus base original em baseAttackBonus
- */
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
   const runes   = getItemRunes(item);
   const actInfo = getPrimaryAttackActivitySource(item);
 
-  if (!actInfo) {
-    return; // já logamos dentro do helper
-  }
+  if (!actInfo) return;
 
   const { id, data, all } = actInfo;
 
   data.attack = data.attack ?? {};
+  data.damage = data.damage ?? { includeBase: true, parts: [] };
 
-  // bônus atual (string → número)
-  const currentBonus = Number(data.attack.bonus || 0) || 0;
+  // ---------- PRECISION: bônus de ataque ----------
+  const currentAtkBonus = Number(data.attack.bonus || 0) || 0;
+  const baseAttackBonus = await ensureBaseAttackBonus(item, currentAtkBonus);
 
-  // garante que temos guardado o valor base original
-  const baseBonus = await ensureBaseAttackBonus(item, currentBonus);
-
-  // soma todos os bônus de Precision
   let precisionBonus = 0;
   for (const r of runes) {
     if (r?.runeSubtype === "precision") {
       precisionBonus += tierToBonus(r.runeTier);
     }
   }
+  const finalAttackBonus = baseAttackBonus + precisionBonus;
+  data.attack.bonus = finalAttackBonus ? String(finalAttackBonus) : "";
 
-  const finalBonus = baseBonus + precisionBonus;
-  data.attack.bonus = finalBonus ? String(finalBonus) : "";
+  // ---------- DAMAGE: bônus fixo no primeiro damage part ----------
+  const parts = Array.isArray(data.damage.parts)
+    ? foundry.utils.duplicate(data.damage.parts)
+    : [];
 
+  // garante que temos ao menos 1 parte de dano pra aplicar bônus fixo
+  if (!parts[0]) {
+    parts[0] = {
+      number: 1,
+      denomination: "d6", // fallback seguro; não mexe no dado base da arma
+      bonus: "",
+      types: [],
+    };
+  }
+
+  const currentDmgBonus = Number(parts[0].bonus || 0) || 0;
+  const baseDamageBonus = await ensureBaseDamageBonus(item, currentDmgBonus);
+
+  let flatDamageBonus = 0;
+  for (const r of runes) {
+    if (r?.runeSubtype === "damage") {
+      flatDamageBonus += tierToBonus(r.runeTier);
+    }
+  }
+
+  const finalDamageBonus = baseDamageBonus + flatDamageBonus;
+  parts[0].bonus = finalDamageBonus ? String(finalDamageBonus) : "";
+
+  // ---------- ELEMENTAL: parte extra de dano ----------
+  const elementalParts = [];
+  for (const r of runes) {
+    if (r?.runeSubtype === "elemental") {
+      const die  = tierToDie(r.runeTier);
+      const type = r.runeDamageType || "fire";
+
+      elementalParts.push({
+        number: 1,
+        denomination: die,
+        bonus: "",
+        types: [type],
+      });
+    }
+  }
+
+  data.damage.parts = [...parts, ...elementalParts];
+
+  // grava de volta
   all[id] = data;
 
-  console.log("[MHH][Runes] aplicando bonus de ataque", {
+  console.log("[MHH][Runes] applyRuneEffectsToItem", {
     item: item.name,
-    baseBonus,
-    precisionBonus,
-    finalBonus,
+    runes,
+    baseAttackBonus,
+    finalAttackBonus,
+    baseDamageBonus,
+    flatDamageBonus,
+    elementalParts,
     activityId: id,
     activity: data
   });
 
-  // regrava o objeto completo de activities no item
   await item.update({
     "system.activities": all,
   });
