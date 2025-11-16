@@ -1,15 +1,16 @@
 import { registerSettings } from "./core/settings.js";
 import { registerAdjustmentFeature } from "./features/adjustment/index.js";
+import { registerRunesFeature } from "./features/runes/index.js";
 
 Hooks.once("init", () => {
   console.log("[MHH] init");
-  registerSettings();         // onde você colocará o “hard-core mode” depois
+  registerSettings();
 });
 
 Hooks.once("ready", async () => {
   console.log("[MHH] ready");
 });
 
-// Registrar as features (cada uma cuida dos próprios hooks)
+// Registrar as features
 registerAdjustmentFeature();
-// ex.: registerFlankingFeature(); registerWoundedFeature(); etc.
+registerRunesFeature();
