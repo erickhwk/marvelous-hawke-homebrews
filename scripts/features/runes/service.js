@@ -8,6 +8,7 @@ import { MODULE_ID, FLAGS } from "../../core/constants.js";
 
 const ITEM_RUNES_KEY    = FLAGS.ITEM_RUNES        ?? "runes";
 const AE_RUNES_DEF_MARK = FLAGS.AE_RUNES_DEF_MARK ?? "mhhRunesDefEffect";
+const SOCKET_FLAG       = FLAGS.RUNE_SOCKET_HOST  ?? "runeHost";
 
 const TIER_ORDER = ["lesser", "greater", "major"];
 
@@ -76,7 +77,30 @@ export function getItemRunes(item) {
 }
 
 export async function setItemRunes(item, list) {
-  return item.setFlag(MODULE_ID, ITEM_RUNES_KEY, Array.isArray(list) ? list : []);
+  const old = getItemRunes(item);
+  const next = Array.isArray(list) ? list : [];
+
+  // Descobrir quais runas foram removidas (por sourceUuid)
+  const removed = old.filter(o =>
+    o?.runeSourceUuid &&
+    !next.some(n => n?.runeSourceUuid === o.runeSourceUuid)
+  );
+
+  for (const r of removed) {
+    try {
+      const runeDoc = await fromUuid(r.runeSourceUuid);
+      if (!runeDoc) continue;
+      // Só limpa se ela estava marcada como encaixada neste item
+      const host = runeDoc.getFlag(MODULE_ID, SOCKET_FLAG);
+      if (host === item.uuid) {
+        await runeDoc.unsetFlag(MODULE_ID, SOCKET_FLAG);
+      }
+    } catch (err) {
+      console.warn("[MHH][Runes] Falha ao limpar socket da runa removida", r, err);
+    }
+  }
+
+  return item.setFlag(MODULE_ID, ITEM_RUNES_KEY, next);
 }
 
 // -----------------------------------------------------------------------------
@@ -275,6 +299,17 @@ export async function installRuneOnItem(item, runeItem) {
     return { ok: false, reason: "ITEM_NOT_COMPATIBLE" };
   }
 
+  // Verificar se esta runa JÁ está encaixada em outro item
+  const currentHost = runeItem.getFlag(MODULE_ID, SOCKET_FLAG);
+  if (currentHost && currentHost !== item.uuid) {
+    // Já está encaixada em outro equipamento
+    return {
+      ok: false,
+      reason: "RUNE_ALREADY_SOCKETED",
+      host: currentHost
+    };
+  }
+
   // runeDamageType só faz sentido para runas elementais
   let runeDamageType = runeItem.getFlag(MODULE_ID, "runeDamageType");
   if (subtype === "elemental") {
@@ -284,9 +319,10 @@ export async function installRuneOnItem(item, runeItem) {
   }
 
   const newRune = {
-    runeCategory: category,
-    runeSubtype:  subtype,
-    runeTier:     tier
+    runeCategory:   category,
+    runeSubtype:    subtype,
+    runeTier:       tier,
+    runeSourceUuid: runeItem.uuid
   };
   if (runeDamageType !== undefined) {
     newRune.runeDamageType = runeDamageType;
@@ -315,8 +351,26 @@ export async function installRuneOnItem(item, runeItem) {
     // nova é melhor → substitui
     runes[idxSameSubtype] = newRune;
     await setItemRunes(item, runes);
-    await applyRuneEffectsToItem(item);
 
+    // se a runa antiga tinha sourceUuid, limpa o host dela
+    if (existing?.runeSourceUuid) {
+      try {
+        const oldRuneDoc = await fromUuid(existing.runeSourceUuid);
+        if (oldRuneDoc) {
+          const host = oldRuneDoc.getFlag(MODULE_ID, SOCKET_FLAG);
+          if (host === item.uuid) {
+            await oldRuneDoc.unsetFlag(MODULE_ID, SOCKET_FLAG);
+          }
+        }
+      } catch (err) {
+        console.warn("[MHH][Runes] Falha ao limpar host da runa substituída", existing, err);
+      }
+    }
+
+    // marca a nova runa como encaixada neste item
+    await runeItem.setFlag(MODULE_ID, SOCKET_FLAG, item.uuid);
+
+    await applyRuneEffectsToItem(item);
     const actor = item.parent;
     if (actor) await applyDefensiveRunesToActor(actor);
 
@@ -332,6 +386,10 @@ export async function installRuneOnItem(item, runeItem) {
   // não havia runa desse subtipo ainda → adiciona
   runes.push(newRune);
   await setItemRunes(item, runes);
+
+  // marca a nova runa como encaixada neste item
+  await runeItem.setFlag(MODULE_ID, SOCKET_FLAG, item.uuid);
+
   await applyRuneEffectsToItem(item);
 
   const actor = item.parent;
@@ -344,6 +402,7 @@ export async function installRuneOnItem(item, runeItem) {
     total: runes.length
   };
 }
+
 
 export async function removeAllRunesFromItem(item) {
   if (!item) return;

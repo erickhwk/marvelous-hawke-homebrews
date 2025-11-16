@@ -15,7 +15,8 @@ export const FLAGS = {
   RUNE_TIER: "runeTier",              // lesser / greater / major
   RUNE_DAMAGE_TYPE: "runeDamageType", // fire / cold / acid / lightning
   AE_RUNES_MARK: "mhhRuneEffect",      // AE gerado pelo service de runas
-  AE_RUNES_DEF_MARK: "mhhRunesDefEffect" // AE gerado pelo service de runas defensivas
+  AE_RUNES_DEF_MARK: "mhhRunesDefEffect", // AE gerado pelo service de runas defensivas
+  RUNE_SOCKET_HOST: "runeHost"
 };
 
 
