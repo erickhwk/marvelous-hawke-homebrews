@@ -1,58 +1,43 @@
-import { MODULE_ID } from "../../core/constants.js";
+import { MODULE_ID, FLAGS } from "../../core/constants.js";
 import { ActorRunesConfig } from "./app-actor.js";
 import { applyDefensiveRunesToActor } from "./service.js";
-
-/** Helpers pra não depender do service aqui */
-function itemIsWeapon(item) {
-  return item?.type === "weapon";
-}
-
-function itemIsArmorLike(item) {
-  if (item?.type !== "equipment") return false;
-  const sys = item.system ?? {};
-  if (sys.armor) return true;
-
-  const eqType = sys.equipmentType ?? sys.type?.value;
-  if (!eqType) return false;
-  const s = String(eqType).toLowerCase();
-  return s.includes("armor") || s.includes("shield");
-}
-
-function registerActorHeaderButtonHook(hookName) {
-  Hooks.on(hookName, (sheet, buttons) => {
-    const actor = sheet.actor;
-    if (!actor) return;
-
-    console.log(`[MHH][Runes] ${hookName} para actor`, actor.name);
-
-    // Se quiser restringir só a PCs:
-    // if (actor.type !== "character") return;
-
-    buttons.unshift({
-      label: "Runas",
-      class: "mhh-runes-actor-button",
-      icon: "fas fa-gem",
-      onclick: () => {
-        console.log("[MHH][Runes] Abrindo ActorRunesConfig para", actor.name);
-        new ActorRunesConfig(actor, {}).render(true);
-      }
-    });
-  });
-}
+import { actorFromSheetApp } from "../../core/utils.js";
 
 export function registerRunesFeature() {
+
   console.log("[MHH][Runes] registerRunesFeature()");
 
-  // Botão "Runas" no header da ficha de ator (core)
-  registerActorHeaderButtonHook("getActorSheetHeaderButtons");
+  // ====== HEADER BUTTON (V2) - funciona com a ficha moderna do dnd5e ======
+  Hooks.on("getHeaderControlsActorSheetV2", (app, controls) => {
+    try {
+      const { actor } = actorFromSheetApp(app);
+      if (!actor) return;
 
-  // Botão "Runas" no header da ficha de ator 5e (caso o sistema use esse hook específico)
-  registerActorHeaderButtonHook("getActorSheet5eHeaderButtons");
+      // Se quiser restringir só a personagens:
+      // if (actor.type !== "character") return;
 
-  // Recalcular efeitos de runas "de ator" (defensivas + arcanas) ao equipar/desequipar / mudar runas
-  Hooks.on("updateItem", async (item, changes, options, userId) => {
+      // evita duplicação
+      if (controls.some(c => c.class?.includes("mhh-runes-button"))) return;
+
+      controls.unshift({
+        class: "mhh-runes-button",
+        icon: "fas fa-gem",
+        label: "Runas",
+        onClick: () => {
+          console.log("[MHH][Runes] Abrindo janela de runas para", actor.name);
+          new ActorRunesConfig(actor, {}).render(true);
+        }
+      });
+
+    } catch (err) {
+      console.error("[MHH][Runes] getHeaderControlsActorSheetV2 failed:", err);
+    }
+  });
+
+  // ====== REAPLICAR EFEITOS AO EQUIPAR/DES-EQUIPAR ======
+  Hooks.on("updateItem", async (item, changes) => {
     const actor = item.parent;
-    if (!actor || !actor.items) return;
+    if (!actor) return;
 
     const hasProp = foundry.utils.hasProperty;
 
@@ -61,11 +46,12 @@ export function registerRunesFeature() {
       hasProp(changes, "system.equipped.value");
 
     const runesChanged =
-      hasProp(changes, `flags.${MODULE_ID}.itemRunes`);
+      hasProp(changes, `flags.${MODULE_ID}.${FLAGS.ITEM_RUNES}`);
 
     if (!equippedChanged && !runesChanged) return;
 
-    console.log("[MHH][Runes] updateItem → recalculando efeitos de runas para", actor.name);
+    console.log("[MHH][Runes] updateItem → Reaplicando defensive runes para", actor.name);
+
     await applyDefensiveRunesToActor(actor);
   });
 }
