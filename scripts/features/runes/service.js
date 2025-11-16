@@ -3,11 +3,11 @@
 import { MODULE_ID, FLAGS } from "../../core/constants.js";
 
 // -----------------------------------------------------------------------------
-// Constantes / helpers de tiers
+// Constantes / helpers de tiers e compatibilidade
 // -----------------------------------------------------------------------------
 
-const ITEM_RUNES_KEY      = FLAGS.ITEM_RUNES      ?? "runes";
-const AE_RUNES_DEF_MARK   = FLAGS.AE_RUNES_DEF_MARK ?? "mhhRunesDefEffect";
+const ITEM_RUNES_KEY    = FLAGS.ITEM_RUNES        ?? "runes";
+const AE_RUNES_DEF_MARK = FLAGS.AE_RUNES_DEF_MARK ?? "mhhRunesDefEffect";
 
 const TIER_ORDER = ["lesser", "greater", "major"];
 
@@ -26,7 +26,7 @@ function tierToBonus(tier) {
 }
 
 function tierToDenomination(tier) {
-  // usado só para dano elemental: d4 / d6 / d8
+  // dano elemental: d4 / d6 / d8
   switch (tier) {
     case "greater": return 6; // d6
     case "major":   return 8; // d8
@@ -40,6 +40,30 @@ function isItemEquipped(item) {
   if (typeof eq === "boolean") return eq;
   if (eq && typeof eq === "object") return !!eq.value;
   return false;
+}
+
+function itemIsWeapon(item) {
+  return item?.type === "weapon";
+}
+
+function itemIsArmorLike(item) {
+  if (item?.type !== "equipment") return false;
+  const sys = item.system ?? {};
+
+  // armadura/escudo do dnd5e geralmente tem system.armor
+  if (sys.armor) return true;
+
+  const eqType = sys.equipmentType ?? sys.type?.value;
+  if (!eqType) return false;
+  const s = String(eqType).toLowerCase();
+  return s.includes("armor") || s.includes("shield");
+}
+
+function itemSupportsRuneCategory(item, category) {
+  if (!category) return true; // se não setou, não bloqueia (erro de setup)
+  if (category === "offensive") return itemIsWeapon(item);
+  if (category === "defensive") return itemIsArmorLike(item);
+  return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -68,7 +92,7 @@ export function getPrimaryAttackActivitySource(item) {
       return {
         id,
         data: foundry.utils.duplicate(data),
-        all: foundry.utils.duplicate(activities)
+        all:  foundry.utils.duplicate(activities)
       };
     }
   }
@@ -244,6 +268,11 @@ export async function installRuneOnItem(item, runeItem) {
 
   if (!subtype) {
     return { ok: false, reason: "INVALID_RUNE_DATA" };
+  }
+
+  // Valida compatibilidade item x categoria
+  if (!itemSupportsRuneCategory(item, category)) {
+    return { ok: false, reason: "ITEM_NOT_COMPATIBLE" };
   }
 
   // runeDamageType só faz sentido para runas elementais
