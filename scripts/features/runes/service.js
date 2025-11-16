@@ -1,31 +1,41 @@
 import { MODULE_ID } from "../../core/constants.js";
 
 /**
- * Lê as runas instaladas no item.
- * Estrutura: item.flags[MODULE_ID].runes = [ { runeCategory, runeSubtype, runeTier }, ... ]
+ * Runa armazenada no item:
+ * item.flags[MODULE_ID].runes = [
+ *   { runeCategory, runeSubtype, runeTier },
+ *   ...
+ * ]
  */
+
 export function getItemRunes(item) {
   return item.getFlag(MODULE_ID, "runes") ?? [];
 }
 
-/**
- * Salva o array de runas no item.
- */
 export async function setItemRunes(item, runes) {
   return item.setFlag(MODULE_ID, "runes", Array.isArray(runes) ? runes : []);
 }
 
-/**
- * Por enquanto, só armas e armaduras podem ter runas.
- */
 export function itemSupportsRunes(item) {
   const type = item?.type;
-  return ["weapon", "armor"].includes(type);
+  // por enquanto, só arma
+  return type === "weapon";
 }
 
 /**
- * Instala uma runa em um item.
- * rune: Item de runa (ex.: "Lesser Precision Rune")
+ * lesser → +1, greater → +2, major → +3
+ */
+function tierToBonus(tier) {
+  switch (tier) {
+    case "greater": return 2;
+    case "major":   return 3;
+    case "lesser":
+    default:        return 1;
+  }
+}
+
+/**
+ * Instala uma runa no item (mesmo esquema que você já testou)
  */
 export async function installRuneOnItem(item, rune) {
   if (!item || !rune) {
@@ -43,7 +53,7 @@ export async function installRuneOnItem(item, rune) {
 
   const current = getItemRunes(item);
 
-  // Não deixar duplicar mesma combinação subtype+tier
+  // trava duplicar mesma combinação subtype+tier
   if (current.some(r => r.runeSubtype === runeData.runeSubtype && r.runeTier === runeData.runeTier)) {
     return { ok: false, reason: "RUNE_ALREADY_INSTALLED" };
   }
@@ -62,99 +72,63 @@ export async function installRuneOnItem(item, rune) {
 }
 
 /**
- * Remove uma runa específica do item comparando category+subtype+tier.
+ * Acha a primeira Activity de ataque da arma.
+ * Se teu schema estiver um pouco diferente, a gente ajusta esse helper.
  */
-export async function removeRuneFromItem(item, runeData) {
-  if (!item || !runeData) return { ok: false, reason: "MISSING_ITEM_OR_RUNE" };
+function getPrimaryAttackActivity(item) {
+  const acts = item.system?.activities;
+  if (!acts) return null;
 
-  const current = getItemRunes(item);
-  const filtered = current.filter(r =>
-    !(
-      r.runeCategory === runeData.runeCategory &&
-      r.runeSubtype === runeData.runeSubtype &&
-      r.runeTier === runeData.runeTier
-    )
-  );
-
-  await setItemRunes(item, filtered);
-  await applyRuneEffectsToItem(item);
-
-  return {
-    ok: true,
-    reason: "REMOVED",
-    total: filtered.length
-  };
-}
-
-/**
- * Converte tier de runa em bônus numérico.
- * lesser → +1, greater → +2, major → +3
- */
-function tierToBonus(tier) {
-  switch (tier) {
-    case "greater": return 2;
-    case "major":   return 3;
-    case "lesser":
-    default:        return 1;
+  for (const [key, data] of Object.entries(acts)) {
+    if (!data) continue;
+    if (data.type === "attack") {
+      return { key, data: foundry.utils.duplicate(data) };
+    }
   }
+
+  return null;
 }
 
 /**
- * Aplica os efeitos de TODAS as runas instaladas como um único Active Effect no item.
- * Por enquanto: só Precision Rune → bônus de ataque com armas.
+ * Aplica os efeitos das runas diretamente na Activity de ataque.
+ * Neste teste: só Precision Rune → bônus de To Hit.
  */
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
-  // 1) remover AE anterior de runas
-  const prev = item.effects.find(e => e.getFlag(MODULE_ID, "runeEffect"));
-  if (prev) await prev.delete();
-
   const runes = getItemRunes(item);
   if (!runes.length) return;
 
-  const changes = [];
-
-  for (const r of runes) {
-    if (!r || !r.runeSubtype) continue;
-
-    // Por enquanto, tratamos só Precision
-    if (r.runeSubtype === "precision") {
-      const bonus = tierToBonus(r.runeTier);
-      if (!bonus) continue;
-
-      changes.push(
-        {
-          key: "system.bonuses.mwak.attack",
-          mode: foundry.CONST.ACTIVE_EFFECT_MODES.ADD,
-          value: bonus
-        },
-        {
-          key: "system.bonuses.rwak.attack",
-          mode: foundry.CONST.ACTIVE_EFFECT_MODES.ADD,
-          value: bonus
-        }
-      );
-    }
-
-    // Aqui depois entram os outros tipos:
-    // - damage
-    // - elemental
-    // - reinforcement
-    // - protection
-    // etc.
+  const actInfo = getPrimaryAttackActivity(item);
+  if (!actInfo) {
+    console.warn("[MHH][Runes] Nenhuma Attack Activity encontrada para o item", item);
+    return;
   }
 
-  if (!changes.length) return;
+  const { key, data } = actInfo;
 
-  await item.createEmbeddedDocuments("ActiveEffect", [{
-    name: "Runes",
-    img: item.img,
-    origin: item.uuid,
-    disabled: false,
-    changes,
-    flags: {
-      [MODULE_ID]: { runeEffect: true }
+  // soma todos os bônus de precisão
+  let precisionBonus = 0;
+  for (const r of runes) {
+    if (r.runeSubtype === "precision") {
+      precisionBonus += tierToBonus(r.runeTier);
     }
-  }]);
+  }
+
+  // se não tem precision, por enquanto não fazemos nada
+  if (!precisionBonus) {
+    return;
+  }
+
+  // garante estrutura
+  data.attack = data.attack ?? {};
+
+  // campo provável do To Hit Bonus; se o seu for outro, a gente ajusta
+  const current = Number(data.attack.toHitBonus ?? 0) || 0;
+  data.attack.toHitBonus = current + precisionBonus;
+
+  // aplica de volta na arma
+  await item.update({
+    [`system.activities.${key}`]: data
+  });
 }
