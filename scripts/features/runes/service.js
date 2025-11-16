@@ -92,56 +92,64 @@ export async function removeAllRunesFromItem(item) {
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
-  const runes = getItemRunes(item);
+  const runes   = getItemRunes(item);
   const actInfo = getPrimaryAttackActivitySource(item);
-
-  if (!actInfo) {
-    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para", item);
-    return;
-  }
+  if (!actInfo) return;
 
   const { id, data, all } = actInfo;
-
-  /* ------------------------------ BASE STRUCTURES ------------------------------ */
 
   data.attack = data.attack ?? {};
   data.damage = data.damage ?? { includeBase: true, parts: [] };
 
-  /* ------------------------------ PRECISION RUNES ------------------------------ */
+  /* ---------- PRECISION: bônus de ataque ---------- */
 
   let precisionBonus = 0;
-
   for (const r of runes) {
     if (r?.runeSubtype === "precision") {
       precisionBonus += tierToBonus(r.runeTier);
     }
   }
 
+  // base = 0; só as runas definem bônus
   data.attack.bonus = precisionBonus ? String(precisionBonus) : "";
 
-  /* ------------------------------ FLAT DAMAGE RUNES ------------------------------ */
+  /* ---------- Construir lista NOVA de damage.parts ---------- */
+  // Regra: parts representa apenas dano EXTRA.
+  const parts = [];
+
+  /* ---------- DAMAGE: bônus fixo (+1/+2/+3) ---------- */
 
   let flatDamageBonus = 0;
-
   for (const r of runes) {
     if (r?.runeSubtype === "damage") {
       flatDamageBonus += tierToBonus(r.runeTier);
     }
   }
 
-  /* ------------------------------ ELEMENTAL RUNES ------------------------------ */
+  if (flatDamageBonus) {
+    parts.push({
+      number: 1,
+      denomination: null,       // flat, sem dado
+      bonus: String(flatDamageBonus),
+      types: [],
+      custom: { enabled: false },
+      scaling: { number: 1 }
+    });
+  }
+
+  /* ---------- ELEMENTAL: 1d4/1d6/1d8 tipo X ---------- */
 
   const elementalParts = [];
 
   for (const r of runes) {
     if (r?.runeSubtype !== "elemental") continue;
 
-    const denom = tierToDenomination(r.runeTier);
+    const denom = tierToDenomination(r.runeTier); // 4 / 6 / 8
     const type  = r.runeDamageType || "fire";
 
     elementalParts.push({
       number: 1,
-      denomination: denom,  // d4/d6/d8
+      denomination: denom,
       bonus: "",
       types: [type],
       custom: { enabled: false },
@@ -149,20 +157,9 @@ export async function applyRuneEffectsToItem(item) {
     });
   }
 
-  /* ------------------------------ BUILD FINAL DAMAGE PARTS ------------------------------ */
+  data.damage.parts = [...parts, ...elementalParts];
 
-  const basePart = {
-    number: 1,
-    denomination: null, // usa o dado próprio da arma
-    bonus: flatDamageBonus ? String(flatDamageBonus) : "",
-    types: [],
-    custom: { enabled: false },
-    scaling: { number: 1 }
-  };
-
-  data.damage.parts = [basePart, ...elementalParts];
-
-  /* ------------------------------ FINAL UPDATE ------------------------------ */
+  /* ---------- Atualizar activity ---------- */
 
   all[id] = data;
 
@@ -172,11 +169,12 @@ export async function applyRuneEffectsToItem(item) {
     precisionBonus,
     flatDamageBonus,
     elementalParts,
-    finalActivityId: id,
-    finalActivity: data
+    activityId: id,
+    activity: data
   });
 
   await item.update({
     "system.activities": all
   });
 }
+
