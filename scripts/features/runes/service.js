@@ -9,7 +9,7 @@ import { MODULE_ID } from "../../core/constants.js";
  *   ...
  * ]
  *
- * Além disso, guardamos:
+ * Também guardamos:
  * item.flags[MODULE_ID].baseAttackBonus → bônus base original da activity de ataque
  */
 
@@ -27,10 +27,6 @@ export async function setItemRunes(item, runes) {
   );
 }
 
-/**
- * Armazena o bônus base original da Activity de ataque
- * (antes das runas mexerem).
- */
 async function ensureBaseAttackBonus(item, baseValue) {
   const existing = await item.getFlag(MODULE_ID, "baseAttackBonus");
   if (existing === undefined) {
@@ -44,7 +40,7 @@ async function ensureBaseAttackBonus(item, baseValue) {
 
 export function itemSupportsRunes(item) {
   const type = item?.type;
-  // por enquanto, só armas
+  // MVP: só armas
   return type === "weapon";
 }
 
@@ -65,56 +61,38 @@ function tierToBonus(tier) {
 /* ---------------- Activities helpers ---------------- */
 
 /**
- * Retorna a Activity de ataque principal.
- * Suporta tanto array quanto objeto em system.activities.
+ * Pega as activities cruas do _source como objeto { id: data }.
  */
-function getPrimaryAttackActivity(item) {
-  const acts = item.system?.activities;
-  if (!acts) return null;
+function getActivitiesSource(item) {
+  const src = item._source?.system?.activities ?? {};
+  return foundry.utils.duplicate(src);
+}
 
-  // Caso 1: array (é o que o seu dump mostrou)
-  if (Array.isArray(acts)) {
-    for (let i = 0; i < acts.length; i++) {
-      const data = acts[i];
-      if (!data) continue;
-      if (data.type === "attack") {
-        return {
-          index: i,
-          key: i, // só para log
-          data: foundry.utils.duplicate(data),
-          all: foundry.utils.duplicate(acts)
-        };
-      }
-    }
-    return null;
-  }
+/**
+ * Acha a activity de ataque no _source.
+ * Retorna { id, data, all } onde:
+ * - id   → ID da activity ("BFZXotvvF4YaAKeT")
+ * - data → objeto da activity (editável)
+ * - all  → objeto completo de activities (pra regravar depois)
+ */
+function getPrimaryAttackActivitySource(item) {
+  const all = getActivitiesSource(item);
+  const entries = Object.entries(all);
 
-  // Caso 2: objeto indexado por id/slug (outros itens podem vir assim)
-  const clone = foundry.utils.duplicate(acts);
-  const entries = Object.entries(clone);
-  for (let i = 0; i < entries.length; i++) {
-    const [key, data] = entries[i];
+  for (const [id, data] of entries) {
     if (!data) continue;
     if (data.type === "attack") {
-      return {
-        index: i,
-        key,
-        data,
-        all: clone
-      };
+      console.log("[MHH][Runes] usando activity de ataque", id, data);
+      return { id, data, all };
     }
   }
 
+  console.warn("[MHH][Runes] nenhuma activity type 'attack' em", item.name, all);
   return null;
 }
 
 /* ---------------- API pública: instalar / remover ---------------- */
 
-/**
- * Instala uma runa no item.
- * - item: arma (Item)
- * - rune: item de runa (Item) com flags do módulo
- */
 export async function installRuneOnItem(item, rune) {
   if (!item || !rune) {
     return { ok: false, reason: "MISSING_ITEM_OR_RUNE" };
@@ -155,9 +133,6 @@ export async function installRuneOnItem(item, rune) {
   };
 }
 
-/**
- * Remove uma runa do item, comparando category+subtype+tier.
- */
 export async function removeRuneFromItem(item, runeData) {
   if (!item || !runeData) {
     return { ok: false, reason: "MISSING_ITEM_OR_RUNE" };
@@ -190,20 +165,19 @@ export async function removeRuneFromItem(item, runeData) {
  *
  * MVP: só Precision Rune
  * - soma bônus de ataque em attack.bonus
- * - preserva o bônus base original numa flag
+ * - preserva o bônus base original em baseAttackBonus
  */
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
-  const runes = getItemRunes(item);
-  const actInfo = getPrimaryAttackActivity(item);
+  const runes   = getItemRunes(item);
+  const actInfo = getPrimaryAttackActivitySource(item);
 
   if (!actInfo) {
-    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para o item", item.name, item);
-    return;
+    return; // já logamos dentro do helper
   }
 
-  const { data, all } = actInfo;
+  const { id, data, all } = actInfo;
 
   data.attack = data.attack ?? {};
 
@@ -224,15 +198,19 @@ export async function applyRuneEffectsToItem(item) {
   const finalBonus = baseBonus + precisionBonus;
   data.attack.bonus = finalBonus ? String(finalBonus) : "";
 
-  // agora reescreve de volta em system.activities,
-  // respeitando se era array ou objeto
-  if (Array.isArray(item.system.activities)) {
-    const acts = all;
-    acts[actInfo.index] = data;
-    await item.update({ "system.activities": acts });
-  } else {
-    const acts = all;
-    acts[actInfo.key] = data;
-    await item.update({ "system.activities": acts });
-  }
+  all[id] = data;
+
+  console.log("[MHH][Runes] aplicando bonus de ataque", {
+    item: item.name,
+    baseBonus,
+    precisionBonus,
+    finalBonus,
+    activityId: id,
+    activity: data
+  });
+
+  // regrava o objeto completo de activities no item
+  await item.update({
+    "system.activities": all,
+  });
 }
