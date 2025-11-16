@@ -6,8 +6,17 @@ export const FLAGS = {
   BASE_ACTOR_NAME: "baseActorName",
   BASE_TOKEN_NAME: "baseTokenName",
   AE_MARK: "mhhAdjustmentEffect",
-  BASE_CR: "baseCR"
+  BASE_CR: "baseCR",
+
+  // ---------- RUNES ----------
+  ITEM_RUNES: "itemRunes",            // lista de runas instaladas no item
+  RUNE_CATEGORY: "runeCategory",      // offensive / defensive
+  RUNE_SUBTYPE: "runeSubtype",        // elemental / precision / damage / etc.
+  RUNE_TIER: "runeTier",              // lesser / greater / major
+  RUNE_DAMAGE_TYPE: "runeDamageType", // fire / cold / acid / lightning
+  AE_RUNES_MARK: "mhhRuneEffect"      // AE gerado pelo service de runas
 };
+
 
 export const EFFECT = {
   NAME: "Creature Adjustment",
