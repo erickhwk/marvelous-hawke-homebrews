@@ -1,4 +1,4 @@
-import { MODULE_ID, RUNE_FLAGS } from "../../core/constants.js";
+import { MODULE_ID } from "../../core/constants.js";
 import { getFlag, setFlag, updateSafe } from "../../core/utils.js";
 
 /**
