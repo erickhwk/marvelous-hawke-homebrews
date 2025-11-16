@@ -12,6 +12,41 @@ const SOCKET_FLAG       = FLAGS.RUNE_SOCKET_HOST  ?? "runeHost";
 
 const TIER_ORDER = ["lesser", "greater", "major"];
 
+function normalizeRarity(raw) {
+  if (!raw) return "common";
+  const s = String(raw).toLowerCase().replace(/\s+/g, "");
+  if (s === "uncommon") return "uncommon";
+  if (s === "rare") return "rare";
+  if (s === "veryrare" || s === "very_rare") return "very-rare";
+  if (s === "legendary") return "legendary";
+  return "common";
+}
+
+/**
+ * Quantidade máxima de runas que um item pode ter, baseado na raridade.
+ *
+ * Common:        0 slots
+ * Uncommon/Rare: 1 slot
+ * Very Rare:     2 slots
+ * Legendary:     3 slots
+ */
+function getMaxRuneSlots(item) {
+  const rarityRaw = item?.system?.rarity ?? "common";
+  const rarity = normalizeRarity(rarityRaw);
+
+  switch (rarity) {
+    case "uncommon":
+    case "rare":
+      return 1;
+    case "very-rare":
+      return 2;
+    case "legendary":
+      return 3;
+    default:
+      return 0;
+  }
+}
+
 function tierRank(tier) {
   const i = TIER_ORDER.indexOf(String(tier));
   return i >= 0 ? i : 0;
@@ -330,9 +365,10 @@ export async function installRuneOnItem(item, runeItem) {
 
   const runes = getItemRunes(item);
 
-  // Regra: 1 runa por subtipo
+  // ---------------- Regra: 1 runa por subtipo ----------------
   const idxSameSubtype = runes.findIndex(r => r?.runeSubtype === newRune.runeSubtype);
 
+  // Se já existir runa desse subtipo, é upgrade/downgrade – NÃO gasta slot extra
   if (idxSameSubtype >= 0) {
     const existing = runes[idxSameSubtype];
     const oldRank  = tierRank(existing.runeTier);
@@ -383,7 +419,31 @@ export async function installRuneOnItem(item, runeItem) {
     };
   }
 
-  // não havia runa desse subtipo ainda → adiciona
+  // ---------------- Regra de slots por raridade ----------------
+
+  const maxSlots = getMaxRuneSlots(item);
+
+  if (maxSlots <= 0) {
+    // Item não deveria ter runas
+    return {
+      ok: false,
+      reason: "NO_RUNE_SLOTS",
+      maxSlots,
+      total: runes.length
+    };
+  }
+
+  if (runes.length >= maxSlots) {
+    // Todos os slots ocupados
+    return {
+      ok: false,
+      reason: "NO_FREE_RUNE_SLOT",
+      maxSlots,
+      total: runes.length
+    };
+  }
+
+  // não havia runa desse subtipo ainda → adiciona, consumindo 1 slot
   runes.push(newRune);
   await setItemRunes(item, runes);
 
@@ -399,10 +459,10 @@ export async function installRuneOnItem(item, runeItem) {
     ok: true,
     reason: "INSTALLED",
     added: newRune,
-    total: runes.length
+    total: runes.length,
+    maxSlots
   };
 }
-
 
 export async function removeAllRunesFromItem(item) {
   if (!item) return;
