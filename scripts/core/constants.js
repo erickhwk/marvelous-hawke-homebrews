@@ -37,7 +37,8 @@ export const PROFILES = {
 
 export const TEMPLATES = {
   ADJ_FORM:   "modules/marvelous-hawke-homebrews/templates/adjustments.hbs",
-  ADJ_FOOTER: "modules/marvelous-hawke-homebrews/templates/adjustment-footer.hbs"
+  ADJ_FOOTER: "modules/marvelous-hawke-homebrews/templates/adjustment-footer.hbs",
+  RUNES_ACTOR: "modules/marvelous-hawke-homebrews/templates/runes-actor.hbs"
 };
 
 export const V = {

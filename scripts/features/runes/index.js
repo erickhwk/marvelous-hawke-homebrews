@@ -1,20 +1,46 @@
-// scripts/features/runes/index.js
-
 import { MODULE_ID } from "../../core/constants.js";
+import { ActorRunesConfig } from "./app-actor.js";
 import { applyDefensiveRunesToActor } from "./service.js";
 
+/** Helpers pra não depender do service aqui */
+function itemIsWeapon(item) {
+  return item?.type === "weapon";
+}
+
+function itemIsArmorLike(item) {
+  if (item?.type !== "equipment") return false;
+  const sys = item.system ?? {};
+  if (sys.armor) return true;
+
+  const eqType = sys.equipmentType ?? sys.type?.value;
+  if (!eqType) return false;
+  const s = String(eqType).toLowerCase();
+  return s.includes("armor") || s.includes("shield");
+}
+
 export function registerRunesFeature() {
-  // Recalcular defensivos quando um item for atualizado
-  Hooks.on("updateItem", async (item, changes, options, userId) => {
-    const actor = item.parent;
+
+  // Botão "Runas" no header da ficha de ator
+  Hooks.on("getActorSheetHeaderButtons", (sheet, buttons) => {
+    const actor = sheet.actor;
     if (!actor) return;
 
-    // Só interessa pra actor (não compendium, etc.)
-    if (!("items" in actor)) return;
+    // Se quiser restringir só a PCs, pode testar actor.type === "character"
+    buttons.unshift({
+      label: "Runas",
+      class: "mhh-runes-actor-button",
+      icon: "fas fa-gem",
+      onclick: () => {
+        new ActorRunesConfig(actor, {}).render(true);
+      }
+    });
+  });
 
-    // Só queremos atualizar quando:
-    // - mudar equipar/desequipar
-    // - ou mudar as flags de runas
+  // Recalcular efeitos de runas "de ator" (defensivas + arcanas)
+  Hooks.on("updateItem", async (item, changes, options, userId) => {
+    const actor = item.parent;
+    if (!actor || !actor.items) return;
+
     const hasProp = foundry.utils.hasProperty;
 
     const equippedChanged =
