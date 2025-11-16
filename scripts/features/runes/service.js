@@ -220,7 +220,6 @@ export async function applyRuneEffectsToItem(item) {
 
   const runes   = getItemRunes(item);
   const actInfo = getPrimaryAttackActivitySource(item);
-
   if (!actInfo) return;
 
   const { id, data, all } = actInfo;
@@ -228,9 +227,7 @@ export async function applyRuneEffectsToItem(item) {
   data.attack = data.attack ?? {};
   data.damage = data.damage ?? { includeBase: true, parts: [] };
 
-  // ---------- PRECISION: bônus de ataque ----------
-  const currentAtkBonus = Number(data.attack.bonus || 0) || 0;
-  const baseAttackBonus = await ensureBaseAttackBonus(item, currentAtkBonus);
+  /* ---------- PRECISION: bônus de ataque ---------- */
 
   let precisionBonus = 0;
   for (const r of runes) {
@@ -238,26 +235,24 @@ export async function applyRuneEffectsToItem(item) {
       precisionBonus += tierToBonus(r.runeTier);
     }
   }
-  const finalAttackBonus = baseAttackBonus + precisionBonus;
-  data.attack.bonus = finalAttackBonus ? String(finalAttackBonus) : "";
 
-  // ---------- DAMAGE: bônus fixo no primeiro damage part ----------
+  // MVP: assume base 0. Se não tiver nenhuma precision, campo fica vazio.
+  data.attack.bonus = precisionBonus ? String(precisionBonus) : "";
+
+  /* ---------- DAMAGE: bônus fixo na 1ª parte ---------- */
+
   const parts = Array.isArray(data.damage.parts)
     ? foundry.utils.duplicate(data.damage.parts)
     : [];
 
-  // garante que temos ao menos 1 parte de dano pra aplicar bônus fixo
   if (!parts[0]) {
     parts[0] = {
       number: 1,
-      denomination: "d6", // fallback seguro; não mexe no dado base da arma
+      denomination: "d6",
       bonus: "",
-      types: [],
+      types: []
     };
   }
-
-  const currentDmgBonus = Number(parts[0].bonus || 0) || 0;
-  const baseDamageBonus = await ensureBaseDamageBonus(item, currentDmgBonus);
 
   let flatDamageBonus = 0;
   for (const r of runes) {
@@ -266,36 +261,43 @@ export async function applyRuneEffectsToItem(item) {
     }
   }
 
-  const finalDamageBonus = baseDamageBonus + flatDamageBonus;
-  parts[0].bonus = finalDamageBonus ? String(finalDamageBonus) : "";
+  parts[0].bonus = flatDamageBonus ? String(flatDamageBonus) : "";
 
-  // ---------- ELEMENTAL: parte extra de dano ----------
+  /* ---------- ELEMENTAL: partes extras ---------- */
+
   const elementalParts = [];
   for (const r of runes) {
     if (r?.runeSubtype === "elemental") {
       const die  = tierToDie(r.runeTier);
       const type = r.runeDamageType || "fire";
 
-      elementalParts.push({
-        number: 1,
-        denomination: die,
-        bonus: "",
-        types: [type],
-      });
+      const base = foundry.utils.duplicate(parts[0]);
+      base.number       = 1;
+      base.denomination = die;
+      base.bonus        = "";
+      base.types        = [type];
+
+      elementalParts.push(base);
     }
   }
 
   data.damage.parts = [...parts, ...elementalParts];
 
-  // grava de volta
+  /* ---------- limpar flags de base se não houver mais runas ---------- */
+
+  if (!runes.length) {
+    // se quiser, pode simplesmente ignorar isso;
+    // mantive só pra não deixar lixo se você já vinha usando base* antes.
+    await item.unsetFlag(MODULE_ID, "baseAttackBonus");
+    await item.unsetFlag(MODULE_ID, "baseDamageBonus");
+  }
+
   all[id] = data;
 
   console.log("[MHH][Runes] applyRuneEffectsToItem", {
     item: item.name,
     runes,
-    baseAttackBonus,
-    finalAttackBonus,
-    baseDamageBonus,
+    precisionBonus,
     flatDamageBonus,
     elementalParts,
     activityId: id,
@@ -306,3 +308,4 @@ export async function applyRuneEffectsToItem(item) {
     "system.activities": all,
   });
 }
+
