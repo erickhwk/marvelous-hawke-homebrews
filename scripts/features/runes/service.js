@@ -95,10 +95,22 @@ function itemIsArmorLike(item) {
   return s.includes("armor") || s.includes("shield");
 }
 
-function itemSupportsRuneCategory(item, category) {
-  if (!category) return true; // se não setou, não bloqueia (erro de setup)
-  if (category === "offensive") return itemIsWeapon(item);
-  if (category === "defensive") return itemIsArmorLike(item);
+function itemSupportsRuneCategory(item, category, subtype) {
+  if (!category) return true;
+
+  if (category === "offensive") {
+    // Arcane Precision / Arcane Oppression → em equipment (foco), não em weapon
+    if (subtype === "arcane-precision" || subtype === "arcane-oppression") {
+      return item?.type === "equipment";
+    }
+    // demais ofensivas → armas
+    return itemIsWeapon(item);
+  }
+
+  if (category === "defensive") {
+    return itemIsArmorLike(item);
+  }
+
   return true;
 }
 
@@ -253,26 +265,42 @@ export async function applyRuneEffectsToItem(item) {
 export async function applyDefensiveRunesToActor(actor) {
   if (!actor) return;
 
-  // remove AE anterior de runas defensivas
   const prev = actor.effects.find(e => e.getFlag(MODULE_ID, AE_RUNES_DEF_MARK));
   if (prev) await prev.delete();
 
-  let acBonus   = 0; // reinforcement
-  let saveBonus = 0; // protection
+  let acBonus          = 0; // reinforcement
+  let saveBonus        = 0; // protection
+  let spellAttackBonus = 0; // arcane-precision
+  let spellDcBonus     = 0; // arcane-oppression
 
   for (const item of actor.items) {
     if (!isItemEquipped(item)) continue;
 
     const runes = getItemRunes(item);
     for (const r of runes) {
-      if (!r || r.runeCategory !== "defensive") continue;
+      if (!r) continue;
 
       const bonus = tierToBonus(r.runeTier);
 
-      if (r.runeSubtype === "reinforcement") {
-        acBonus += bonus;
-      } else if (r.runeSubtype === "protection") {
-        saveBonus += bonus;
+      switch (r.runeSubtype) {
+        case "reinforcement":
+          acBonus += bonus;
+          break;
+
+        case "protection":
+          saveBonus += bonus;
+          break;
+
+        case "arcane-precision":
+          spellAttackBonus += bonus;
+          break;
+
+        case "arcane-oppression":
+          spellDcBonus += bonus;
+          break;
+
+        default:
+          break;
       }
     }
   }
@@ -295,6 +323,30 @@ export async function applyDefensiveRunesToActor(actor) {
     });
   }
 
+  if (spellAttackBonus) {
+    // spell attack (melee/ranged spell attacks)
+    changes.push(
+      {
+        key: "system.bonuses.msak.attack",
+        mode: foundry.CONST.ACTIVE_EFFECT_MODES.ADD,
+        value: `+${spellAttackBonus}`
+      },
+      {
+        key: "system.bonuses.rsak.attack",
+        mode: foundry.CONST.ACTIVE_EFFECT_MODES.ADD,
+        value: `+${spellAttackBonus}`
+      }
+    );
+  }
+
+  if (spellDcBonus) {
+    changes.push({
+      key: "system.bonuses.spell.dc",
+      mode: foundry.CONST.ACTIVE_EFFECT_MODES.ADD,
+      value: `+${spellDcBonus}`
+    });
+  }
+
   if (!changes.length) return;
 
   await actor.createEmbeddedDocuments("ActiveEffect", [{
@@ -310,6 +362,7 @@ export async function applyDefensiveRunesToActor(actor) {
     }
   }]);
 }
+
 
 // -----------------------------------------------------------------------------
 // Instalar / remover runas em itens
@@ -330,7 +383,7 @@ export async function installRuneOnItem(item, runeItem) {
   }
 
   // Valida compatibilidade item x categoria
-  if (!itemSupportsRuneCategory(item, category)) {
+  if (!itemSupportsRuneCategory(item, category, subtype)) {
     return { ok: false, reason: "ITEM_NOT_COMPATIBLE" };
   }
 
