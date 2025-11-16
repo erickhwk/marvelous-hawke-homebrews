@@ -70,23 +70,40 @@ export function getPrimaryAttackActivitySource(item) {
  * ==========================================================================================*/
 
 export async function installRuneOnItem(item, runeItem) {
-  if (!item || !runeItem) return { ok: false, reason: "NO_ITEM" };
+  if (!item || !runeItem) {
+    return { ok: false, reason: "NO_ITEM" };
+  }
 
-  // Lê a runa a partir dos flags do próprio item de runa
-  const newRune = {
-    runeCategory:   runeItem.getFlag(MODULE_ID, "runeCategory"),
-    runeSubtype:    runeItem.getFlag(MODULE_ID, "runeSubtype"),
-    runeTier:       runeItem.getFlag(MODULE_ID, "runeTier") ?? "lesser",
-    runeDamageType: runeItem.getFlag(MODULE_ID, "runeDamageType") ?? "fire",
-  };
+  // Lê dados da runa a partir dos flags do próprio item de runa
+  const subtype  = runeItem.getFlag(MODULE_ID, "runeSubtype");
+  const category = runeItem.getFlag(MODULE_ID, "runeCategory");
+  const tier     = runeItem.getFlag(MODULE_ID, "runeTier") ?? "lesser";
 
-  if (!newRune.runeSubtype) {
+  if (!subtype) {
     return { ok: false, reason: "INVALID_RUNE_DATA" };
+  }
+
+  // Só runas elementais têm tipo de dano. As demais não devem carregar essa prop.
+  let runeDamageType = runeItem.getFlag(MODULE_ID, "runeDamageType");
+  if (subtype === "elemental") {
+    runeDamageType = runeDamageType || "fire";
+  } else {
+    runeDamageType = undefined;
+  }
+
+  const newRune = {
+    runeCategory: category,
+    runeSubtype:  subtype,
+    runeTier:     tier
+  };
+  if (runeDamageType !== undefined) {
+    newRune.runeDamageType = runeDamageType;
   }
 
   const runes = getItemRunes(item) ?? [];
 
-  // Procura se já existe uma runa desse subtipo na arma
+  // ------------ Regra: 1 runa por subtipo por arma ------------
+
   const idxSameSubtype = runes.findIndex(r => r?.runeSubtype === newRune.runeSubtype);
 
   if (idxSameSubtype >= 0) {
@@ -94,7 +111,7 @@ export async function installRuneOnItem(item, runeItem) {
     const oldRank  = tierRank(existing.runeTier);
     const newRank  = tierRank(newRune.runeTier);
 
-    // nova é pior ou igual → não substitui
+    // Nova runa é pior ou igual → não substitui
     if (newRank <= oldRank) {
       return {
         ok: false,
@@ -104,7 +121,7 @@ export async function installRuneOnItem(item, runeItem) {
       };
     }
 
-    // nova é melhor → substitui a antiga
+    // Nova runa é melhor → substitui a antiga
     runes[idxSameSubtype] = newRune;
     await setItemRunes(item, runes);
     await applyRuneEffectsToItem(item);
@@ -118,7 +135,7 @@ export async function installRuneOnItem(item, runeItem) {
     };
   }
 
-  // Não havia runa desse subtipo: adiciona normalmente
+  // Não havia runa desse subtipo ainda → adiciona normalmente
   runes.push(newRune);
   await setItemRunes(item, runes);
   await applyRuneEffectsToItem(item);
