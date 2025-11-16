@@ -28,7 +28,7 @@ export async function setItemRunes(item, runes) {
 }
 
 /**
- * Armazena o bônus base original da activity de ataque
+ * Armazena o bônus base original da Activity de ataque
  * (antes das runas mexerem).
  */
 async function ensureBaseAttackBonus(item, baseValue) {
@@ -38,11 +38,6 @@ async function ensureBaseAttackBonus(item, baseValue) {
     return baseValue;
   }
   return Number(existing) || 0;
-}
-
-async function getBaseAttackBonus(item) {
-  const v = await item.getFlag(MODULE_ID, "baseAttackBonus");
-  return Number(v) || 0;
 }
 
 /* ---------------- Compatibilidade de item ---------------- */
@@ -70,20 +65,42 @@ function tierToBonus(tier) {
 /* ---------------- Activities helpers ---------------- */
 
 /**
- * Retorna a primeira Activity de ataque da arma.
- * system.activities é um array.
+ * Retorna a Activity de ataque principal.
+ * Suporta tanto array quanto objeto em system.activities.
  */
 function getPrimaryAttackActivity(item) {
   const acts = item.system?.activities;
-  if (!Array.isArray(acts)) return null;
+  if (!acts) return null;
 
-  for (let i = 0; i < acts.length; i++) {
-    const data = acts[i];
+  // Caso 1: array (é o que o seu dump mostrou)
+  if (Array.isArray(acts)) {
+    for (let i = 0; i < acts.length; i++) {
+      const data = acts[i];
+      if (!data) continue;
+      if (data.type === "attack") {
+        return {
+          index: i,
+          key: i, // só para log
+          data: foundry.utils.duplicate(data),
+          all: foundry.utils.duplicate(acts)
+        };
+      }
+    }
+    return null;
+  }
+
+  // Caso 2: objeto indexado por id/slug (outros itens podem vir assim)
+  const clone = foundry.utils.duplicate(acts);
+  const entries = Object.entries(clone);
+  for (let i = 0; i < entries.length; i++) {
+    const [key, data] = entries[i];
     if (!data) continue;
     if (data.type === "attack") {
       return {
         index: i,
-        data: foundry.utils.duplicate(data)
+        key,
+        data,
+        all: clone
       };
     }
   }
@@ -180,13 +197,13 @@ export async function applyRuneEffectsToItem(item) {
 
   const runes = getItemRunes(item);
   const actInfo = getPrimaryAttackActivity(item);
+
   if (!actInfo) {
-    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para o item", item);
+    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para o item", item.name, item);
     return;
   }
 
-  const activities = foundry.utils.duplicate(item.system.activities ?? []);
-  const { index, data } = actInfo;
+  const { data, all } = actInfo;
 
   data.attack = data.attack ?? {};
 
@@ -204,15 +221,18 @@ export async function applyRuneEffectsToItem(item) {
     }
   }
 
-  // novo valor = base + bônus de runas
   const finalBonus = baseBonus + precisionBonus;
-
-  // se final for 0, deixa string vazia (igual ficha default)
   data.attack.bonus = finalBonus ? String(finalBonus) : "";
 
-  activities[index] = data;
-
-  await item.update({
-    "system.activities": activities,
-  });
+  // agora reescreve de volta em system.activities,
+  // respeitando se era array ou objeto
+  if (Array.isArray(item.system.activities)) {
+    const acts = all;
+    acts[actInfo.index] = data;
+    await item.update({ "system.activities": acts });
+  } else {
+    const acts = all;
+    acts[actInfo.key] = data;
+    await item.update({ "system.activities": acts });
+  }
 }
