@@ -1,26 +1,59 @@
+// scripts/features/runes/service.js
+
 import { MODULE_ID } from "../../core/constants.js";
 
 /**
- * Runa armazenada no item:
- * item.flags[MODULE_ID].runes = [
- *   { runeCategory, runeSubtype, runeTier },
+ * Estrutura esperada em item.flags[MODULE_ID].runes:
+ * [
+ *   { runeCategory: "offensive", runeSubtype: "precision", runeTier: "lesser" },
  *   ...
  * ]
+ *
+ * Além disso, guardamos:
+ * item.flags[MODULE_ID].baseAttackBonus → bônus base original da activity de ataque
  */
+
+/* ---------------- Helpers de flags ---------------- */
 
 export function getItemRunes(item) {
   return item.getFlag(MODULE_ID, "runes") ?? [];
 }
 
 export async function setItemRunes(item, runes) {
-  return item.setFlag(MODULE_ID, "runes", Array.isArray(runes) ? runes : []);
+  return item.setFlag(
+    MODULE_ID,
+    "runes",
+    Array.isArray(runes) ? runes : []
+  );
 }
+
+/**
+ * Armazena o bônus base original da activity de ataque
+ * (antes das runas mexerem).
+ */
+async function ensureBaseAttackBonus(item, baseValue) {
+  const existing = await item.getFlag(MODULE_ID, "baseAttackBonus");
+  if (existing === undefined) {
+    await item.setFlag(MODULE_ID, "baseAttackBonus", baseValue);
+    return baseValue;
+  }
+  return Number(existing) || 0;
+}
+
+async function getBaseAttackBonus(item) {
+  const v = await item.getFlag(MODULE_ID, "baseAttackBonus");
+  return Number(v) || 0;
+}
+
+/* ---------------- Compatibilidade de item ---------------- */
 
 export function itemSupportsRunes(item) {
   const type = item?.type;
-  // por enquanto, só arma
+  // por enquanto, só armas
   return type === "weapon";
 }
+
+/* ---------------- Tier helpers ---------------- */
 
 /**
  * lesser → +1, greater → +2, major → +3
@@ -34,8 +67,36 @@ function tierToBonus(tier) {
   }
 }
 
+/* ---------------- Activities helpers ---------------- */
+
 /**
- * Instala uma runa no item (mesmo esquema que você já testou)
+ * Retorna a primeira Activity de ataque da arma.
+ * system.activities é um array.
+ */
+function getPrimaryAttackActivity(item) {
+  const acts = item.system?.activities;
+  if (!Array.isArray(acts)) return null;
+
+  for (let i = 0; i < acts.length; i++) {
+    const data = acts[i];
+    if (!data) continue;
+    if (data.type === "attack") {
+      return {
+        index: i,
+        data: foundry.utils.duplicate(data)
+      };
+    }
+  }
+
+  return null;
+}
+
+/* ---------------- API pública: instalar / remover ---------------- */
+
+/**
+ * Instala uma runa no item.
+ * - item: arma (Item)
+ * - rune: item de runa (Item) com flags do módulo
  */
 export async function installRuneOnItem(item, rune) {
   if (!item || !rune) {
@@ -53,8 +114,14 @@ export async function installRuneOnItem(item, rune) {
 
   const current = getItemRunes(item);
 
-  // trava duplicar mesma combinação subtype+tier
-  if (current.some(r => r.runeSubtype === runeData.runeSubtype && r.runeTier === runeData.runeTier)) {
+  // evita duplicar mesma combinação subtype+tier
+  if (
+    current.some(
+      (r) =>
+        r.runeSubtype === runeData.runeSubtype &&
+        r.runeTier === runeData.runeTier
+    )
+  ) {
     return { ok: false, reason: "RUNE_ALREADY_INSTALLED" };
   }
 
@@ -67,68 +134,85 @@ export async function installRuneOnItem(item, rune) {
     ok: true,
     reason: "INSTALLED",
     added: runeData,
-    total: updated.length
+    total: updated.length,
   };
 }
 
 /**
- * Acha a primeira Activity de ataque da arma.
- * Se teu schema estiver um pouco diferente, a gente ajusta esse helper.
+ * Remove uma runa do item, comparando category+subtype+tier.
  */
-function getPrimaryAttackActivity(item) {
-  const acts = item.system?.activities;
-  if (!acts) return null;
-
-  for (const [key, data] of Object.entries(acts)) {
-    if (!data) continue;
-    if (data.type === "attack") {
-      return { key, data: foundry.utils.duplicate(data) };
-    }
+export async function removeRuneFromItem(item, runeData) {
+  if (!item || !runeData) {
+    return { ok: false, reason: "MISSING_ITEM_OR_RUNE" };
   }
 
-  return null;
+  const current = getItemRunes(item);
+  const filtered = current.filter(
+    (r) =>
+      !(
+        r.runeCategory === runeData.runeCategory &&
+        r.runeSubtype === runeData.runeSubtype &&
+        r.runeTier === runeData.runeTier
+      )
+  );
+
+  await setItemRunes(item, filtered);
+  await applyRuneEffectsToItem(item);
+
+  return {
+    ok: true,
+    reason: "REMOVED",
+    total: filtered.length,
+  };
 }
 
+/* ---------------- Aplicar efeitos nas Activities ---------------- */
+
 /**
- * Aplica os efeitos das runas diretamente na Activity de ataque.
- * Neste teste: só Precision Rune → bônus de To Hit.
+ * Recalcula as Activities da arma com base nas runas instaladas.
+ *
+ * MVP: só Precision Rune
+ * - soma bônus de ataque em attack.bonus
+ * - preserva o bônus base original numa flag
  */
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
   const runes = getItemRunes(item);
-  if (!runes.length) return;
-
   const actInfo = getPrimaryAttackActivity(item);
   if (!actInfo) {
-    console.warn("[MHH][Runes] Nenhuma Attack Activity encontrada para o item", item);
+    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para o item", item);
     return;
   }
 
-  const { key, data } = actInfo;
+  const activities = foundry.utils.duplicate(item.system.activities ?? []);
+  const { index, data } = actInfo;
 
-  // soma todos os bônus de precisão
+  data.attack = data.attack ?? {};
+
+  // bônus atual (string → número)
+  const currentBonus = Number(data.attack.bonus || 0) || 0;
+
+  // garante que temos guardado o valor base original
+  const baseBonus = await ensureBaseAttackBonus(item, currentBonus);
+
+  // soma todos os bônus de Precision
   let precisionBonus = 0;
   for (const r of runes) {
-    if (r.runeSubtype === "precision") {
+    if (r?.runeSubtype === "precision") {
       precisionBonus += tierToBonus(r.runeTier);
     }
   }
 
-  // se não tem precision, por enquanto não fazemos nada
-  if (!precisionBonus) {
-    return;
-  }
+  // novo valor = base + bônus de runas
+  const finalBonus = baseBonus + precisionBonus;
 
-  // garante estrutura
-  data.attack = data.attack ?? {};
+  // se final for 0, deixa string vazia (igual ficha default)
+  data.attack.bonus = finalBonus ? String(finalBonus) : "";
 
-  // campo provável do To Hit Bonus; se o seu for outro, a gente ajusta
-  const current = Number(data.attack.toHitBonus ?? 0) || 0;
-  data.attack.toHitBonus = current + precisionBonus;
+  activities[index] = data;
 
-  // aplica de volta na arma
   await item.update({
-    [`system.activities.${key}`]: data
+    "system.activities": activities,
   });
 }
