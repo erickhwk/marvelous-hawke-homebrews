@@ -1,6 +1,13 @@
 import { MODULE_ID, FLAGS } from "../../core/constants.js";
 import { getFlag, setFlag } from "../../core/utils.js";
 
+const TIER_ORDER = ["lesser", "greater", "major"];
+
+function tierRank(tier) {
+  const i = TIER_ORDER.indexOf(String(tier));
+  return i >= 0 ? i : 0;
+}
+
 /* ============================================================================================
  * Helpers
  * ==========================================================================================*/
@@ -65,19 +72,63 @@ export function getPrimaryAttackActivitySource(item) {
 export async function installRuneOnItem(item, runeItem) {
   if (!item || !runeItem) return { ok: false, reason: "NO_ITEM" };
 
-  const existing = getItemRunes(item);
-  const added = {
+  // Lê a runa a partir dos flags do próprio item de runa
+  const newRune = {
     runeCategory:   runeItem.getFlag(MODULE_ID, "runeCategory"),
     runeSubtype:    runeItem.getFlag(MODULE_ID, "runeSubtype"),
     runeTier:       runeItem.getFlag(MODULE_ID, "runeTier") ?? "lesser",
     runeDamageType: runeItem.getFlag(MODULE_ID, "runeDamageType") ?? "fire",
   };
 
-  existing.push(added);
-  await setItemRunes(item, existing);
+  if (!newRune.runeSubtype) {
+    return { ok: false, reason: "INVALID_RUNE_DATA" };
+  }
+
+  const runes = getItemRunes(item) ?? [];
+
+  // Procura se já existe uma runa desse subtipo na arma
+  const idxSameSubtype = runes.findIndex(r => r?.runeSubtype === newRune.runeSubtype);
+
+  if (idxSameSubtype >= 0) {
+    const existing = runes[idxSameSubtype];
+    const oldRank  = tierRank(existing.runeTier);
+    const newRank  = tierRank(newRune.runeTier);
+
+    // nova é pior ou igual → não substitui
+    if (newRank <= oldRank) {
+      return {
+        ok: false,
+        reason: "RUNE_WEAKER_OR_EQUAL_EXISTS",
+        existing,
+        total: runes.length
+      };
+    }
+
+    // nova é melhor → substitui a antiga
+    runes[idxSameSubtype] = newRune;
+    await setItemRunes(item, runes);
+    await applyRuneEffectsToItem(item);
+
+    return {
+      ok: true,
+      reason: "REPLACED_WEAKER",
+      replaced: existing,
+      added: newRune,
+      total: runes.length
+    };
+  }
+
+  // Não havia runa desse subtipo: adiciona normalmente
+  runes.push(newRune);
+  await setItemRunes(item, runes);
   await applyRuneEffectsToItem(item);
 
-  return { ok: true, reason: "INSTALLED", added, total: existing.length };
+  return {
+    ok: true,
+    reason: "INSTALLED",
+    added: newRune,
+    total: runes.length
+  };
 }
 
 export async function removeAllRunesFromItem(item) {
