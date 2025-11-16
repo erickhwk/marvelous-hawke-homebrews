@@ -19,6 +19,13 @@ import { MODULE_ID } from "../../core/constants.js";
  * - baseDamageBonus  → bônus base original em damage.parts[0].bonus
  */
 
+const TIER_ORDER = ["lesser", "greater", "major"];
+
+function tierRank(tier) {
+  const i = TIER_ORDER.indexOf(String(tier));
+  return i >= 0 ? i : 0;
+}
+
 /* ---------------- Helpers de flags ---------------- */
 
 export function getItemRunes(item) {
@@ -132,17 +139,41 @@ export async function installRuneOnItem(item, rune) {
 
   const current = getItemRunes(item);
 
-  // evita duplicar mesma combinação subtype+tier
-  if (
-    current.some(
-      (r) =>
-        r.runeSubtype === runeData.runeSubtype &&
-        r.runeTier === runeData.runeTier
-    )
-  ) {
-    return { ok: false, reason: "RUNE_ALREADY_INSTALLED" };
+  // 1 arma só pode ter 1 runa de cada SUBTYPE (precision, damage, elemental...)
+  const idxSameSubtype = current.findIndex(
+    (r) => r.runeSubtype === runeData.runeSubtype
+  );
+
+  if (idxSameSubtype >= 0) {
+    const existing = current[idxSameSubtype];
+    const newRank  = tierRank(runeData.runeTier);
+    const oldRank  = tierRank(existing.runeTier);
+
+    // nova é pior ou igual → não substitui
+    if (newRank <= oldRank) {
+      return {
+        ok: false,
+        reason: "RUNE_WEAKER_OR_EQUAL_EXISTS",
+        existing
+      };
+    }
+
+    // nova é MAIOR → substitui a antiga
+    current[idxSameSubtype] = runeData;
+
+    await setItemRunes(item, current);
+    await applyRuneEffectsToItem(item);
+
+    return {
+      ok: true,
+      reason: "REPLACED_WEAKER",
+      replaced: existing,
+      added: runeData,
+      total: current.length
+    };
   }
 
+  // não existe nenhuma desse subtype ainda → adiciona
   const updated = [...current, runeData];
   await setItemRunes(item, updated);
 
@@ -152,9 +183,10 @@ export async function installRuneOnItem(item, rune) {
     ok: true,
     reason: "INSTALLED",
     added: runeData,
-    total: updated.length,
+    total: updated.length
   };
 }
+
 
 export async function removeRuneFromItem(item, runeData) {
   if (!item || !runeData) {
