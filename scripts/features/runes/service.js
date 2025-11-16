@@ -1,76 +1,24 @@
-// scripts/features/runes/service.js
+import { MODULE_ID, FLAGS } from "../../core/constants.js";
+import { getFlag, setFlag } from "../../core/utils.js";
 
-import { MODULE_ID } from "../../core/constants.js";
+/* ============================================================================================
+ * Helpers
+ * ==========================================================================================*/
 
 /**
- * Estrutura esperada em item.flags[MODULE_ID].runes:
- * [
- *   {
- *     runeCategory: "offensive",
- *     runeSubtype: "precision" | "damage" | "elemental",
- *     runeTier: "lesser" | "greater" | "major",
- *     runeDamageType?: "fire" | "cold" | "acid" | "lightning" | ...
- *   },
- *   ...
- * ]
- *
- * Flags extras no item:
- * - baseAttackBonus  → bônus base original em attack.bonus
- * - baseDamageBonus  → bônus base original em damage.parts[0].bonus
+ * Retorna estrutura:
+ *   [ { uuid, runeCategory, runeSubtype, runeTier, runeDamageType }, ... ]
  */
-
-const TIER_ORDER = ["lesser", "greater", "major"];
-
-function tierRank(tier) {
-  const i = TIER_ORDER.indexOf(String(tier));
-  return i >= 0 ? i : 0;
-}
-
-/* ---------------- Helpers de flags ---------------- */
-
 export function getItemRunes(item) {
-  return item.getFlag(MODULE_ID, "runes") ?? [];
+  const arr = getFlag(item, "runes") ?? [];
+  return Array.isArray(arr) ? arr : [];
 }
 
-export async function setItemRunes(item, runes) {
-  return item.setFlag(
-    MODULE_ID,
-    "runes",
-    Array.isArray(runes) ? runes : []
-  );
+export async function setItemRunes(item, list) {
+  return setFlag(item, "runes", list ?? []);
 }
 
-async function ensureBaseAttackBonus(item, baseValue) {
-  const existing = await item.getFlag(MODULE_ID, "baseAttackBonus");
-  if (existing === undefined) {
-    await item.setFlag(MODULE_ID, "baseAttackBonus", baseValue);
-    return baseValue;
-  }
-  return Number(existing) || 0;
-}
-
-async function ensureBaseDamageBonus(item, baseValue) {
-  const existing = await item.getFlag(MODULE_ID, "baseDamageBonus");
-  if (existing === undefined) {
-    await item.setFlag(MODULE_ID, "baseDamageBonus", baseValue);
-    return baseValue;
-  }
-  return Number(existing) || 0;
-}
-
-/* ---------------- Compatibilidade de item ---------------- */
-
-export function itemSupportsRunes(item) {
-  const type = item?.type;
-  // MVP: só armas
-  return type === "weapon";
-}
-
-/* ---------------- Tier helpers ---------------- */
-
-/**
- * lesser → +1, greater → +2, major → +3
- */
+/** Converter tier → bônus */
 function tierToBonus(tier) {
   switch (tier) {
     case "greater": return 2;
@@ -80,236 +28,141 @@ function tierToBonus(tier) {
   }
 }
 
-/**
- * lesser → d4, greater → d6, major → d8
- * usado para runas elementais
- */
-function tierToDie(tier) {
+/** Converter tier → dado numérico (d4/d6/d8) */
+function tierToDenomination(tier) {
   switch (tier) {
-    case "greater": return "d6";
-    case "major":   return "d8";
+    case "greater": return 6; // d6
+    case "major":   return 8; // d8
     case "lesser":
-    default:        return "d4";
+    default:        return 4; // d4
   }
 }
 
-/* ---------------- Activities helpers ---------------- */
-
 /**
- * Pega as activities cruas do _source como objeto { id: data }.
+ * Retorna a activity principal de ataque do item em:
+ * {
+ *   id,
+ *   data,
+ *   all
+ * }
  */
-function getActivitiesSource(item) {
-  const src = item._source?.system?.activities ?? {};
-  return foundry.utils.duplicate(src);
-}
+export function getPrimaryAttackActivitySource(item) {
+  const entries = item._source?.system?.activities;
+  if (!entries) return null;
 
-/**
- * Acha a activity de ataque no _source.
- */
-function getPrimaryAttackActivitySource(item) {
-  const all = getActivitiesSource(item);
-  const entries = Object.entries(all);
-
-  for (const [id, data] of entries) {
-    if (!data) continue;
+  for (const [id, data] of Object.entries(entries)) {
     if (data.type === "attack") {
-      return { id, data, all };
+      return { id, data: foundry.utils.duplicate(data), all: foundry.utils.duplicate(entries) };
     }
   }
-
-  console.warn("[MHH][Runes] nenhuma activity type 'attack' em", item.name, all);
   return null;
 }
 
-/* ---------------- API pública: instalar / remover ---------------- */
+/* ============================================================================================
+ * Instalar / remover runas
+ * ==========================================================================================*/
 
-export async function installRuneOnItem(item, rune) {
-  if (!item || !rune) {
-    return { ok: false, reason: "MISSING_ITEM_OR_RUNE" };
-  }
+export async function installRuneOnItem(item, runeItem) {
+  if (!item || !runeItem) return { ok: false, reason: "NO_ITEM" };
 
-  if (!itemSupportsRunes(item)) {
-    return { ok: false, reason: "ITEM_NOT_COMPATIBLE" };
-  }
+  const existing = getItemRunes(item);
+  const added = {
+    runeCategory:   runeItem.getFlag(MODULE_ID, "runeCategory"),
+    runeSubtype:    runeItem.getFlag(MODULE_ID, "runeSubtype"),
+    runeTier:       runeItem.getFlag(MODULE_ID, "runeTier") ?? "lesser",
+    runeDamageType: runeItem.getFlag(MODULE_ID, "runeDamageType") ?? "fire",
+  };
 
-  const runeData = rune.flags?.[MODULE_ID];
-  if (!runeData) {
-    return { ok: false, reason: "INVALID_RUNE_ITEM" };
-  }
-
-  const current = getItemRunes(item);
-
-  // 1 arma só pode ter 1 runa de cada SUBTYPE (precision, damage, elemental...)
-  const idxSameSubtype = current.findIndex(
-    (r) => r.runeSubtype === runeData.runeSubtype
-  );
-
-  if (idxSameSubtype >= 0) {
-    const existing = current[idxSameSubtype];
-    const newRank  = tierRank(runeData.runeTier);
-    const oldRank  = tierRank(existing.runeTier);
-
-    // nova é pior ou igual → não substitui
-    if (newRank <= oldRank) {
-      return {
-        ok: false,
-        reason: "RUNE_WEAKER_OR_EQUAL_EXISTS",
-        existing
-      };
-    }
-
-    // nova é MAIOR → substitui a antiga
-    current[idxSameSubtype] = runeData;
-
-    await setItemRunes(item, current);
-    await applyRuneEffectsToItem(item);
-
-    return {
-      ok: true,
-      reason: "REPLACED_WEAKER",
-      replaced: existing,
-      added: runeData,
-      total: current.length
-    };
-  }
-
-  // não existe nenhuma desse subtype ainda → adiciona
-  const updated = [...current, runeData];
-  await setItemRunes(item, updated);
-
+  existing.push(added);
+  await setItemRunes(item, existing);
   await applyRuneEffectsToItem(item);
 
-  return {
-    ok: true,
-    reason: "INSTALLED",
-    added: runeData,
-    total: updated.length
-  };
+  return { ok: true, reason: "INSTALLED", added, total: existing.length };
 }
 
-
-export async function removeRuneFromItem(item, runeData) {
-  if (!item || !runeData) {
-    return { ok: false, reason: "MISSING_ITEM_OR_RUNE" };
-  }
-
-  const current = getItemRunes(item);
-  const filtered = current.filter(
-    (r) =>
-      !(
-        r.runeCategory === runeData.runeCategory &&
-        r.runeSubtype === runeData.runeSubtype &&
-        r.runeTier === runeData.runeTier
-      )
-  );
-
-  await setItemRunes(item, filtered);
+export async function removeAllRunesFromItem(item) {
+  await setItemRunes(item, []);
   await applyRuneEffectsToItem(item);
-
-  return {
-    ok: true,
-    reason: "REMOVED",
-    total: filtered.length,
-  };
 }
 
-/* ---------------- Aplicar efeitos nas Activities ---------------- */
+/* ============================================================================================
+ * Aplicação das Runas (Activity-based)
+ * ==========================================================================================*/
 
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
-  const runes   = getItemRunes(item);
+  const runes = getItemRunes(item);
   const actInfo = getPrimaryAttackActivitySource(item);
-  if (!actInfo) return;
+
+  if (!actInfo) {
+    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para", item);
+    return;
+  }
 
   const { id, data, all } = actInfo;
+
+  /* ------------------------------ BASE STRUCTURES ------------------------------ */
 
   data.attack = data.attack ?? {};
   data.damage = data.damage ?? { includeBase: true, parts: [] };
 
-  /* ---------- PRECISION: bônus de ataque ---------- */
+  /* ------------------------------ PRECISION RUNES ------------------------------ */
 
   let precisionBonus = 0;
+
   for (const r of runes) {
     if (r?.runeSubtype === "precision") {
       precisionBonus += tierToBonus(r.runeTier);
     }
   }
 
-  // base 0: se não tiver nenhuma precision, campo fica vazio
   data.attack.bonus = precisionBonus ? String(precisionBonus) : "";
 
-  /* ---------- DAMAGE: bônus fixo na 1ª parte ---------- */
-
-  let parts = Array.isArray(data.damage.parts)
-    ? foundry.utils.duplicate(data.damage.parts)
-    : [];
-
-  // garante uma parte base de dano
-  if (!parts[0]) {
-    parts[0] = {
-      number: 1,
-      denomination: "d6",
-      bonus: "",
-      types: []
-    };
-  }
+  /* ------------------------------ FLAT DAMAGE RUNES ------------------------------ */
 
   let flatDamageBonus = 0;
+
   for (const r of runes) {
     if (r?.runeSubtype === "damage") {
       flatDamageBonus += tierToBonus(r.runeTier);
     }
   }
 
-  parts[0].bonus = flatDamageBonus ? String(flatDamageBonus) : "";
-
-  /* ---------- ELEMENTAL: partes extras ---------- */
+  /* ------------------------------ ELEMENTAL RUNES ------------------------------ */
 
   const elementalParts = [];
+
   for (const r of runes) {
     if (r?.runeSubtype !== "elemental") continue;
 
-    const die      = tierToDie(r.runeTier);
-    const elemType = r.runeDamageType || "fire";
+    const denom = tierToDenomination(r.runeTier);
+    const type  = r.runeDamageType || "fire";
 
-    // clona a primeira parte pra manter o formato exato que o sistema espera
-    const base = foundry.utils.duplicate(parts[0]);
-
-    base.number       = 1;
-    base.denomination = die;
-    base.bonus        = "";
-
-    // Ajuste esperto pra diferentes esquemas de "types"
-    if (Array.isArray(base.types) && base.types.length) {
-      const first = base.types[0];
-
-      if (typeof first === "string") {
-        // esquema simples: array de strings
-        base.types = [elemType];
-      } else if (typeof first === "object") {
-        // esquema objeto: mantemos a estrutura mas trocamos o tipo
-        base.types = base.types.map((t, i) => {
-          const copy = foundry.utils.duplicate(t);
-          if (i === 0) {
-            // nomes variam de sistema pra sistema, então tentamos alguns campos comuns
-            if ("type" in copy) copy.type = elemType;
-            if ("damageType" in copy) copy.damageType = elemType;
-            if ("id" in copy) copy.id = elemType;
-          }
-          return copy;
-        });
-      }
-    } else {
-      // se não tinha nada, usa array simples de string
-      base.types = [elemType];
-    }
-
-    elementalParts.push(base);
+    elementalParts.push({
+      number: 1,
+      denomination: denom,  // d4/d6/d8
+      bonus: "",
+      types: [type],
+      custom: { enabled: false },
+      scaling: { number: 1 }
+    });
   }
 
-  // junta tudo: parte base (com bonus) + partes elementais
-  data.damage.parts = [...parts, ...elementalParts];
+  /* ------------------------------ BUILD FINAL DAMAGE PARTS ------------------------------ */
+
+  const basePart = {
+    number: 1,
+    denomination: null, // usa o dado próprio da arma
+    bonus: flatDamageBonus ? String(flatDamageBonus) : "",
+    types: [],
+    custom: { enabled: false },
+    scaling: { number: 1 }
+  };
+
+  data.damage.parts = [basePart, ...elementalParts];
+
+  /* ------------------------------ FINAL UPDATE ------------------------------ */
 
   all[id] = data;
 
@@ -319,13 +172,11 @@ export async function applyRuneEffectsToItem(item) {
     precisionBonus,
     flatDamageBonus,
     elementalParts,
-    activityId: id,
-    activity: data
+    finalActivityId: id,
+    finalActivity: data
   });
 
   await item.update({
-    "system.activities": all,
+    "system.activities": all
   });
 }
-
-
