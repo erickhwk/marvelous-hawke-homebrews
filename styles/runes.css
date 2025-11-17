@@ -43,6 +43,7 @@
 /* Coluna 2: infos (nome + meta) */
 .mhh-runes-actor .mhh-runes-item-row__info {
   flex: 1 1 auto;
+  gap: 4px;
 }
 
 .mhh-runes-actor .mhh-runes-item-row__name {
@@ -59,7 +60,6 @@
 .mhh-runes-actor .mhh-runes-item-row__slots {
   flex: 0 0 360px;          /* largura do bloco da direita */
   display: flex;
-  flex-direction: column;
   gap: 4px;
   align-items: flex-end;
 }
