@@ -1,5 +1,4 @@
 import { MODULE_ID, FLAGS, TEMPLATES } from "../../core/constants.js";
-import { actorFromSheetApp } from "../../core/utils.js";
 import { applyAdjustment, readModeFrom } from "./service.js";
 
 export class MHHAdjustmentAppV2 extends foundry.applications.api.HandlebarsApplicationMixin(

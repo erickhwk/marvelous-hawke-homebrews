@@ -25,7 +25,6 @@ function itemIsArmorLike(item) {
 
   const sys = item.system ?? {};
 
-  // Tipos clássicos de armadura/escudo do dnd5e
   const armorTypes = ["light", "medium", "heavy", "shield"];
   const typeValue = sys.type?.value?.toLowerCase?.() ?? "";
   const baseItem  = sys.type?.baseItem?.toLowerCase?.() ?? "";
@@ -33,12 +32,10 @@ function itemIsArmorLike(item) {
   if (armorTypes.includes(typeValue)) return true;
   if (armorTypes.includes(baseItem))  return true;
 
-  // Propriedade típica de escudo
   if (Array.isArray(sys.properties) && sys.properties.includes("shd")) {
     return true;
   }
 
-  // Se tiver AC explícito (> 0), tratamos como armor
   const armorValue = Number(sys.armor?.value ?? 0);
   if (armorValue > 0) return true;
 
@@ -46,12 +43,10 @@ function itemIsArmorLike(item) {
 }
 
 /**
- * Foco arcano = equipment com "foc" nas properties e NÃO armor-like
+ * Foco arcano = equipment com "foc" nas properties
  */
 function itemIsFocusLike(item) {
   const propsRaw = item?.system?.properties;
-
-  // Normaliza para array SEMPRE
   const props = Array.isArray(propsRaw)
     ? propsRaw
     : propsRaw instanceof Set
@@ -60,7 +55,6 @@ function itemIsFocusLike(item) {
 
   return props.includes("foc");
 }
-
 
 /* -------------------------------------------- */
 /*  Helpers de estado / labels                  */
@@ -110,39 +104,46 @@ function makeRuneLabel(r) {
 }
 
 /* -------------------------------------------- */
-/*  Classe principal: ActorRunesConfig          */
+/*  ActorRunesConfig (ApplicationV2)            */
 /* -------------------------------------------- */
 
-export class ActorRunesConfig extends Application {
-
-  constructor(actor, options = {}) {
-    super(options);
+export class ActorRunesConfig extends foundry.applications.api.HandlebarsApplicationMixin(
+  foundry.applications.api.ApplicationV2
+) {
+  constructor(actor, parentApp = null) {
+    super();
     this.actor = actor;
+    this.parentApp = parentApp;
   }
 
-  static get defaultOptions() {
-    return foundry.utils.mergeObject(super.defaultOptions, {
-      id: "mhh-actor-runes-config",
-      classes: ["mhh-runes-actor", "sheet"],
-      template: TEMPLATES.RUNES_ACTOR,
-      width: 700,
-      height: "auto",
-      resizable: true,
-      title: "Runas do Personagem"
-    });
-  }
+  // Tema / layout igual ao Adjustment V2
+  static DEFAULT_OPTIONS = {
+    id: "mhh-actor-runes-config",
+    title: "Runas do Personagem",
+    classes: ["application", "sheet", "sheet-config", "mhh-runes-actor"],
+    width: 700,
+    height: "auto",
+    resizable: true,
+    window: {
+      contentClasses: ["standard-form"] // <- isso tira o parchment e puxa o tema dark de sheet
+    }
+  };
 
-  /* -------------------------------------------- */
-  /*  getData                                     */
-  /* -------------------------------------------- */
-  getData(options = {}) {
+  // Um único "part" com o template inteiro das runas
+  static PARTS = {
+    body: { template: TEMPLATES.RUNES_ACTOR }
+  };
+
+  /**
+   * Prepara o contexto usado pelo template Handlebars.
+   * Equivalente ao antigo getData, mas no modelo ApplicationV2.
+   */
+  async _prepareContext(_options) {
     const actor = this.actor;
-
     const offensiveItems = [];
     const defensiveItems = [];
 
     for (const item of actor.items) {
-      // slots = mesma lógica do service.js
       const maxSlots = getMaxRuneSlots(item);
       if (maxSlots <= 0) continue;
 
@@ -196,40 +197,46 @@ export class ActorRunesConfig extends Application {
     };
   }
 
-  /* -------------------------------------------- */
-  /*  activateListeners                            */
-  /* -------------------------------------------- */
-  activateListeners(html) {
-    super.activateListeners(html);
+  /**
+   * No ApplicationV2, em vez de activateListeners(html),
+   * usamos _replaceHTML para pegar o root element e plugar os eventos.
+   */
+  async _replaceHTML(result, options) {
+    await super._replaceHTML(result, options);
+    const root = this.element;
+    if (!root) return;
+
+    // Evitar registrar listeners mais de uma vez
+    if (root.dataset.mhhDelegated) return;
+    root.dataset.mhhDelegated = "1";
 
     /* ------------------------------
-       Remover uma runa do slot
+       Remover runa de um slot
     ------------------------------ */
-    html.find(".mhh-runes-slot__remove").on("click", async ev => {
-      ev.preventDefault();
-      const btn     = ev.currentTarget;
-      const itemId  = btn.dataset.itemId;
-      const slotIdx = Number(btn.dataset.slot);
+    root.querySelectorAll(".mhh-runes-slot__remove").forEach(btn => {
+      btn.addEventListener("click", async ev => {
+        ev.preventDefault();
+        const itemId  = btn.dataset.itemId;
+        const slotIdx = Number(btn.dataset.slot);
 
-      const item = this.actor.items.get(itemId);
-      if (!item) return;
+        const item = this.actor.items.get(itemId);
+        if (!item) return;
 
-      const runes = getItemRunes(item);
-      if (!Array.isArray(runes) || !runes[slotIdx]) return;
+        const runes = getItemRunes(item);
+        if (!Array.isArray(runes) || !runes[slotIdx]) return;
 
-      runes.splice(slotIdx, 1);
-      await setItemRunes(item, runes);
-      await applyRuneEffectsToItem(item); // ofensivas em arma
+        runes.splice(slotIdx, 1);
+        await setItemRunes(item, runes);
+        await applyRuneEffectsToItem(item); // ofensivas em arma; defensivas/arcanas via service
 
-      // efeitos defensivos/arcanos são recalculados pelo hook updateItem
-      this.render(true);
+        // Re-render da janela
+        this.render(true);
+      });
     });
 
     /* ------------------------------
-       Drag & Drop de runa
+       Drag & Drop de runa na linha
     ------------------------------ */
-
-    const root = html[0];
 
     root.addEventListener("dragover", ev => {
       ev.preventDefault();
