@@ -106,68 +106,88 @@ export function getMaxRuneSlots(item) {
 /* ------------------------------------------------------------------------- */
 
 export function itemSupportsRuneCategory(item, category, subtype) {
-  const origCategory = category;
-  const origSubtype  = subtype;
+  if (!item) return false;
 
-  category = String(category || "").toLowerCase();
-  subtype  = String(subtype  || "").toLowerCase();
-  const normSub = subtype.replace(/[\s_]+/g, "-"); // "Arcane Precision" → "arcane-precision"
-
-  const sys   = item?.system ?? {};
+  const sys   = item.system ?? {};
   const props = Array.isArray(sys.properties) ? sys.properties : [];
-  const typeValue = sys.type?.value;
-  const baseItem  = sys.type?.baseItem;
+  const isWeapon = item.type === "weapon";
 
-  console.log("[MHH][Runes] itemSupportsRuneCategory(ENTER)", {
-    itemName: item?.name,
-    itemType: item?.type,
-    typeValue,
-    baseItem,
-    props,
-    origCategory,
-    origSubtype,
-    category,
-    subtype,
-    normSub
+  // normalização de categoria e subtipo
+  const catRaw  = category ?? "";
+  const subRaw  = subtype ?? "";
+
+  const cat  = String(catRaw).toLowerCase();
+  const sub  = String(subRaw).toLowerCase();
+  const norm = sub.replace(/[\s_]+/g, "-"); // "Arcane Precision" -> "arcane-precision"
+
+  // ---------- REGRAS ESPECÍFICAS PEDIDAS ----------
+
+  // 1) Arcane Precision / Arcane Oppression:
+  //    - item MUST ser equipment
+  //    - item MUST ter "foc" em system.properties
+  if (["arcane-precision", "arcane-oppression"].includes(norm)) {
+    const isFocus =
+      item.type === "equipment" &&
+      props.includes("foc");
+
+    console.debug("[MHH][Runes] compat (arcane-precision/arcane-oppression)", {
+      itemName: item.name,
+      itemType: item.type,
+      props,
+      result: isFocus
+    });
+
+    return isFocus;
+  }
+
+  // 2) Runas ofensivas "de arma": precision / damage / elemental
+  if (["precision", "damage", "elemental"].includes(norm)) {
+    const result = isWeapon;
+    console.debug("[MHH][Runes] compat (weapon offensive)", {
+      itemName: item.name,
+      itemType: item.type,
+      norm,
+      result
+    });
+    return result;
+  }
+
+  // 3) Runas defensivas clássicas: reinforcement / protection
+  if (["reinforcement", "protection"].includes(norm)) {
+    // aqui podemos usar a lógica de armor-like que você já tem
+    const armorLike = (() => {
+      const armorTypes = ["light", "medium", "heavy", "shield"];
+      const typeValue  = sys.type?.value?.toLowerCase?.() ?? "";
+      const baseItem   = sys.type?.baseItem?.toLowerCase?.() ?? "";
+      const hasShieldProp = props.includes("shd");
+      const armorValue = Number(sys.armor?.value ?? 0);
+
+      if (armorTypes.includes(typeValue)) return true;
+      if (armorTypes.includes(baseItem))  return true;
+      if (hasShieldProp)                  return true;
+      if (armorValue > 0)                 return true;
+      return false;
+    })();
+
+    console.debug("[MHH][Runes] compat (defensive armor-like)", {
+      itemName: item.name,
+      itemType: item.type,
+      norm,
+      armorLike
+    });
+
+    return armorLike;
+  }
+
+  // 4) Qualquer outra coisa: por padrão, NÃO é compatível
+  console.debug("[MHH][Runes] compat (unknown subtype -> false)", {
+    itemName: item.name,
+    itemType: item.type,
+    norm
   });
-
-  let result = false;
-
-  if (category === "offensive") {
-    // runas ofensivas "de arma"
-    if (["precision", "damage", "elemental"].includes(normSub)) {
-      result = itemIsWeapon(item);
-      console.log("[MHH][Runes] compat check ofensiva (arma)", { normSub, result });
-    }
-    // runas arcanas: só foco ("foc"), não-armor
-    else if (["arcane-precision", "arcane-oppression"].includes(normSub)) {
-      result = itemIsFocusLike(item);
-      console.log("[MHH][Runes] compat check ofensiva (arcane/focus)", { normSub, result });
-    }
-    // fallback: ofensiva desconhecida → só arma
-    else {
-      result = itemIsWeapon(item);
-      console.log("[MHH][Runes] compat check ofensiva (fallback arma)", { normSub, result });
-    }
-  }
-  else if (category === "defensive") {
-    result = itemIsArmorLike(item);
-    console.log("[MHH][Runes] compat check defensiva (armor-like)", { normSub, result });
-  }
-  else {
-    console.log("[MHH][Runes] categoria desconhecida, result = false");
-    result = false;
-  }
-
-  console.log("[MHH][Runes] itemSupportsRuneCategory(RETURN)", {
-    itemName: item?.name,
-    normSub,
-    category,
-    result
-  });
-
-  return result;
+  return false;
 }
+
 
 
 /* ------------------------------------------------------------------------- */
