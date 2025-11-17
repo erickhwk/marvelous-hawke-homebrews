@@ -2,6 +2,8 @@
 
 import { MODULE_ID, FLAGS, V } from "../../core/constants.js";
 
+let DEFENSIVE_RUNE_LOCK = false;
+
 /* -------------------------------------------- */
 /*  Helpers utilitários                         */
 /* -------------------------------------------- */
@@ -542,114 +544,128 @@ export async function applyRuneEffectsToItem(item) {
 export async function applyDefensiveRunesToActor(actor) {
   if (!actor) return;
 
-  // Remove AE antigo
-  const prev = actor.effects.filter(e => e.getFlag(MODULE_ID, FLAGS.AE_RUNES_DEF_MARK));
-  if (prev.length) {
-    try {
-      await actor.deleteEmbeddedDocuments(
-        "ActiveEffect",
-        prev.map(e => e.id)
-      );
-    } catch (err) {
-      console.warn("[MHH][Runes] applyDefensiveRunesToActor → erro ao remover AE antigo", err);
-    }
-  }
-
-  let acBonus       = 0;
-  let saveBonus     = 0;
-  let spellAtkBonus = 0;
-  let spellDcBonus  = 0;
-
-  for (const item of actor.items) {
-    if (!isItemEquipped(item)) continue;
-
-    const runes = getItemRunes(item);
-    if (!Array.isArray(runes) || !runes.length) continue;
-
-    for (const r of runes) {
-      if (!r) continue;
-      const rawSubtype = r.runeSubtype ?? "";
-      const norm = String(rawSubtype).toLowerCase().replace(/[\s_]+/g, "-");
-      const tBonus = tierToBonus(r.runeTier);
-
-      if (norm === "reinforcement") {
-        acBonus += tBonus;
-      } else if (norm === "protection") {
-        saveBonus += tBonus;
-      } else if (norm === "arcane-precision") {
-        spellAtkBonus += tBonus;
-      } else if (norm === "arcane-oppression") {
-        spellDcBonus += tBonus;
-      }
-    }
-  }
-
-  if (!acBonus && !saveBonus && !spellAtkBonus && !spellDcBonus) {
-    console.log(
-      "[MHH][Runes] applyDefensiveRunesToActor → nenhum bônus encontrado para",
-      actor.name
-    );
+  // Evita execução dupla
+  if (DEFENSIVE_RUNE_LOCK) {
+    console.log("[MHH][Runes] applyDefensiveRunesToActor → SKIPPED (locked)");
     return;
   }
 
-  const changes = [];
+  DEFENSIVE_RUNE_LOCK = true;
 
-  if (acBonus) {
-    changes.push({
-      key: "system.attributes.ac.bonus",
-      mode: V.AE_ADD,
-      value: sign(acBonus)
-    });
-  }
-
-  if (saveBonus) {
-    changes.push({
-      key: "system.bonuses.abilities.save",
-      mode: V.AE_ADD,
-      value: sign(saveBonus)
-    });
-  }
-
-  if (spellAtkBonus) {
-    changes.push(
-      {
-        key: "system.bonuses.msak.attack",
-        mode: V.AE_ADD,
-        value: sign(spellAtkBonus)
-      },
-      {
-        key: "system.bonuses.rsak.attack",
-        mode: V.AE_ADD,
-        value: sign(spellAtkBonus)
-      }
-    );
-  }
-
-  if (spellDcBonus) {
-    changes.push({
-      key: "system.bonuses.spell.dc",
-      mode: V.AE_ADD,
-      value: sign(spellDcBonus)
-    });
-  }
-
-  await actor.createEmbeddedDocuments("ActiveEffect", [{
-    name: "Runes (Defensive & Arcane)",
-    img: actor.img,
-    origin: actor.uuid,
-    disabled: false,
-    changes,
-    flags: {
-      [MODULE_ID]: {
-        [FLAGS.AE_RUNES_DEF_MARK]: true
+  try {
+    // Remove AE antigo
+    const prev = actor.effects.filter(e => e.getFlag(MODULE_ID, FLAGS.AE_RUNES_DEF_MARK));
+    if (prev.length) {
+      try {
+        await actor.deleteEmbeddedDocuments(
+          "ActiveEffect",
+          prev.map(e => e.id)
+        );
+      } catch (err) {
+        console.warn("[MHH][Runes] applyDefensiveRunesToActor → erro ao remover AE antigo", err);
       }
     }
-  }]);
 
-  console.log("[MHH][Runes] applyDefensiveRunesToActor → criado AE para", actor.name, {
-    acBonus,
-    saveBonus,
-    spellAtkBonus,
-    spellDcBonus
-  });
+    let acBonus       = 0;
+    let saveBonus     = 0;
+    let spellAtkBonus = 0;
+    let spellDcBonus  = 0;
+
+    for (const item of actor.items) {
+      if (!isItemEquipped(item)) continue;
+
+      const runes = getItemRunes(item);
+      if (!Array.isArray(runes) || !runes.length) continue;
+
+      for (const r of runes) {
+        if (!r) continue;
+        const rawSubtype = r.runeSubtype ?? "";
+        const norm = String(rawSubtype).toLowerCase().replace(/[\s_]+/g, "-");
+        const tBonus = tierToBonus(r.runeTier);
+
+        if (norm === "reinforcement") {
+          acBonus += tBonus;
+        } else if (norm === "protection") {
+          saveBonus += tBonus;
+        } else if (norm === "arcane-precision") {
+          spellAtkBonus += tBonus;
+        } else if (norm === "arcane-oppression") {
+          spellDcBonus += tBonus;
+        }
+      }
+    }
+
+    if (!acBonus && !saveBonus && !spellAtkBonus && !spellDcBonus) {
+      console.log(
+        "[MHH][Runes] applyDefensiveRunesToActor → nenhum bônus encontrado para",
+        actor.name
+      );
+      return;
+    }
+
+    const changes = [];
+
+    if (acBonus) {
+      changes.push({
+        key: "system.attributes.ac.bonus",
+        mode: V.AE_ADD,
+        value: sign(acBonus)
+      });
+    }
+
+    if (saveBonus) {
+      changes.push({
+        key: "system.bonuses.abilities.save",
+        mode: V.AE_ADD,
+        value: sign(saveBonus)
+      });
+    }
+
+    if (spellAtkBonus) {
+      changes.push(
+        {
+          key: "system.bonuses.msak.attack",
+          mode: V.AE_ADD,
+          value: sign(spellAtkBonus)
+        },
+        {
+          key: "system.bonuses.rsak.attack",
+          mode: V.AE_ADD,
+          value: sign(spellAtkBonus)
+        }
+      );
+    }
+
+    if (spellDcBonus) {
+      changes.push({
+        key: "system.bonuses.spell.dc",
+        mode: V.AE_ADD,
+        value: sign(spellDcBonus)
+      });
+    }
+
+    await actor.createEmbeddedDocuments("ActiveEffect", [{
+      name: "Runes (Defensive & Arcane)",
+      img: actor.img,
+      origin: actor.uuid,
+      disabled: false,
+      changes,
+      flags: {
+        [MODULE_ID]: {
+          [FLAGS.AE_RUNES_DEF_MARK]: true
+        }
+      }
+    }]);
+
+    console.log("[MHH][Runes] applyDefensiveRunesToActor → criado AE para", actor.name, {
+      acBonus,
+      saveBonus,
+      spellAtkBonus,
+      spellDcBonus
+    });
+
+  } finally {
+    // Libera o lock
+    DEFENSIVE_RUNE_LOCK = false;
+  }
 }
