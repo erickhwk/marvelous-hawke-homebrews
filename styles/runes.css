@@ -32,6 +32,7 @@
 /* Coluna 1: ícone */
 .mhh-runes-actor .mhh-runes-item-row__icon {
   flex: 0 0 40px;
+  margin-right: 16px;
 }
 
 .mhh-runes-actor .mhh-runes-item-row__icon img {
@@ -77,6 +78,7 @@
 .mhh-runes-actor select.mhh-runes-slot-select {
   flex: 1 1 auto;
   min-height: 30px;
+  width: auto;
 }
 
 /* Botões “ícone apenas” (aplicar / remover) menores */
