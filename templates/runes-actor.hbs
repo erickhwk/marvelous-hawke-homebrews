@@ -1,133 +1,110 @@
-<form class="flexcol" data-mhh-runes>
+<form class="dnd5e sheet flexcol" autocomplete="off" data-mhh-runes>
 
-  <header class="sheet-header">
-    <h2>Runas de {{actor.name}}</h2>
-    <p class="notes">
-      Arraste uma runa do inventário para o item desejado. Clique na lixeira ao lado de uma runa instalada para removê-la.
-    </p>
-  </header>
+  <section class="standard-form">
 
-  <section class="sheet-body flexcol">
+    <fieldset>
+      <legend>Runas de {{actor.name}}</legend>
 
-    <!-- OFENSIVAS -->
-    <h3>Ofensivas (Armas & Focos)</h3>
+      <p class="notes">
+        Arraste uma runa do inventário para um item com slots. Clique na lixeira para removê-la.
+      </p>
 
-    {{#if offensiveItems.length}}
-      {{#each offensiveItems as |row|}}
-        <div class="flexrow mhh-runes-row" data-item-id="{{row.id}}">
+      <!-- ====================== OFENSIVAS ======================= -->
+      <h3>Ofensivas (Armas & Focos)</h3>
 
-          <!-- Ícone -->
-          <div class="item-image">
-            <img src="{{row.img}}" width="36" height="36" />
-          </div>
+      {{#if offensiveItems.length}}
+        {{#each offensiveItems as |row|}}
+          <div class="mhh-runes-item flexrow" data-item-id="{{row.id}}">
 
-          <!-- Conteúdo -->
-          <div class="flexcol">
+            <div class="item-image">
+              <img src="{{row.img}}" width="36" height="36">
+            </div>
 
-            <!-- Título + meta -->
-            <div class="flexrow" style="align-items: baseline;">
-              <div>
-                <strong>{{row.name}}</strong>
+            <div class="flexcol">
+              <strong>{{row.name}}</strong>
+              <div class="notes small">
+                {{row.rarityLabel}} · Slots {{row.maxSlots}}
+                {{#if row.equipped}}
+                  · <span class="tag tag-success">Equipado</span>
+                {{else}}
+                  · <span class="tag tag-warning">Não equipado</span>
+                {{/if}}
+              </div>
+
+              <div class="flexrow mhh-slot-row">
+                {{#each row.slots as |slot|}}
+                  <div class="mhh-slot" data-slot="{{slot.index}}">
+                    {{#if slot.rune}}
+                      <div class="mhh-slot-content">
+                        <span>{{slot.label}}</span>
+                        <a data-action="remove" data-item-id="{{../id}}" data-slot="{{slot.index}}">
+                          <i class="fas fa-trash"></i>
+                        </a>
+                      </div>
+                    {{else}}
+                      <div class="notes small">Slot vazio</div>
+                    {{/if}}
+                  </div>
+                {{/each}}
               </div>
             </div>
 
-            <div class="notes small">
-              {{row.rarityLabel}} · Slots {{row.maxSlots}}
-              {{#if row.equipped}}
-                · <span class="tag tag-success">Equipado</span>
-              {{else}}
-                · <span class="tag tag-warning">Não equipado</span>
-              {{/if}}
+          </div>
+        {{/each}}
+      {{else}}
+        <p class="notes small">Nenhum item ofensivo com slots.</p>
+      {{/if}}
+
+      <hr>
+
+      <!-- ====================== DEFENSIVAS ======================= -->
+      <h3>Defensivas (Armaduras & Escudos)</h3>
+
+      {{#if defensiveItems.length}}
+        {{#each defensiveItems as |row|}}
+          <div class="mhh-runes-item flexrow" data-item-id="{{row.id}}">
+
+            <div class="item-image">
+              <img src="{{row.img}}" width="36" height="36">
             </div>
 
-            <!-- Slots, em linha logo abaixo -->
-            <div class="flexrow mhh-runes-slots">
-              {{#each row.slots as |slot|}}
-                <div class="mhh-runes-slot" data-slot-index="{{slot.index}}">
-                  {{#if slot.rune}}
-                    <div class="mhh-runes-slot-content">
-                      <span>{{slot.label}}</span>
-                      <a class="mhh-runes-slot-remove"
-                         data-action="remove"
-                         data-item-id="{{../id}}"
-                         data-slot="{{slot.index}}">
-                        <i class="fas fa-trash"></i>
-                      </a>
-                    </div>
-                  {{else}}
-                    <div class="notes small">Slot vazio</div>
-                  {{/if}}
-                </div>
-              {{/each}}
-            </div>
-
-          </div>
-        </div>
-      {{/each}}
-    {{else}}
-      <p class="notes small">Nenhum item ofensivo com slots de runa.</p>
-    {{/if}}
-
-    <hr/>
-
-    <!-- DEFENSIVAS -->
-    <h3>Defensivas (Armaduras & Escudos)</h3>
-
-    {{#if defensiveItems.length}}
-      {{#each defensiveItems as |row|}}
-        <div class="flexrow mhh-runes-row" data-item-id="{{row.id}}">
-
-          <!-- Ícone -->
-          <div class="item-image">
-            <img src="{{row.img}}" width="36" height="36" />
-          </div>
-
-          <!-- Conteúdo -->
-          <div class="flexcol">
-
-            <!-- Título + meta -->
-            <div class="flexrow" style="align-items: baseline;">
-              <div>
-                <strong>{{row.name}}</strong>
+            <div class="flexcol">
+              <strong>{{row.name}}</strong>
+              <div class="notes small">
+                {{row.rarityLabel}} · Slots {{row.maxSlots}}
+                {{#if row.equipped}}
+                  · <span class="tag tag-success">Equipado</span>
+                {{else}}
+                  · <span class="tag tag-warning">Não equipado</span>
+                {{/if}}
               </div>
-            </div>
 
-            <div class="notes small">
-              {{row.rarityLabel}} · Slots {{row.maxSlots}}
-              {{#if row.equipped}}
-                · <span class="tag tag-success">Equipado</span>
-              {{else}}
-                · <span class="tag tag-warning">Não equipado</span>
-              {{/if}}
-            </div>
+              <div class="flexrow mhh-slot-row">
+                {{#each row.slots as |slot|}}
+                  <div class="mhh-slot" data-slot="{{slot.index}}">
+                    {{#if slot.rune}}
+                      <div class="mhh-slot-content">
+                        <span>{{slot.label}}</span>
+                        <a data-action="remove" data-item-id="{{../id}}" data-slot="{{slot.index}}">
+                          <i class="fas fa-trash"></i>
+                        </a>
+                      </div>
+                    {{else}}
+                      <div class="notes small">Slot vazio</div>
+                    {{/if}}
+                  </div>
+                {{/each}}
+              </div>
 
-            <!-- Slots -->
-            <div class="flexrow mhh-runes-slots">
-              {{#each row.slots as |slot|}}
-                <div class="mhh-runes-slot" data-slot-index="{{slot.index}}">
-                  {{#if slot.rune}}
-                    <div class="mhh-runes-slot-content">
-                      <span>{{slot.label}}</span>
-                      <a class="mhh-runes-slot-remove"
-                         data-action="remove"
-                         data-item-id="{{../id}}"
-                         data-slot="{{slot.index}}">
-                        <i class="fas fa-trash"></i>
-                      </a>
-                    </div>
-                  {{else}}
-                    <div class="notes small">Slot vazio</div>
-                  {{/if}}
-                </div>
-              {{/each}}
             </div>
 
           </div>
-        </div>
-      {{/each}}
-    {{else}}
-      <p class="notes small">Nenhum item defensivo com slots de runa.</p>
-    {{/if}}
+        {{/each}}
+      {{else}}
+        <p class="notes small">Nenhum item defensivo com slots.</p>
+      {{/if}}
 
+    </fieldset>
   </section>
+
 </form>
