@@ -109,24 +109,30 @@ export function itemSupportsRuneCategory(item, category, subtype) {
   category = String(category || "").toLowerCase();
   subtype  = String(subtype  || "").toLowerCase();
 
+  // normaliza subtipo pra evitar variações
+  const normSub = subtype.replace(/[\s_]+/g, "-"); // "Arcane Precision" → "arcane-precision"
+
   if (category === "offensive") {
-    // runas ofensivas "de arma"
-    if (["precision", "damage", "elemental"].includes(subtype)) {
+    // Runas ofensivas de arma
+    if (["precision", "damage", "elemental"].includes(normSub)) {
       return itemIsWeapon(item);
     }
-    // runas arcanas: só em focos
-    if (["arcane-precision", "arcane-oppression"].includes(subtype)) {
+
+    // Runas arcanas: SÓ foco ("foc"), não-armor
+    if (["arcane-precision", "arcane-oppression"].includes(normSub)) {
       return itemIsFocusLike(item);
     }
-    // fallback
+
+    // fallback conservador: se subtipo ofensivo desconhecido, só deixamos em arma
     return itemIsWeapon(item);
   }
 
   if (category === "defensive") {
-    // defensivas: armaduras e escudos
+    // defensivas: armor/shield
     return itemIsArmorLike(item);
   }
 
+  // categoria desconhecida → não suporta
   return false;
 }
 

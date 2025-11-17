@@ -21,42 +21,27 @@ function itemIsArmorLike(item) {
 
   const sys = item.system ?? {};
 
-  //
-  // 1) Verificação correta de armaduras reais
-  //    O D&D5e só considera armor quando:
-  //    - system.type.value é "light", "medium", "heavy"
-  //    - OU system.type.value é "shield"
-  //
+  // 1) Tipos clássicos de armadura/escudo do dnd5e
   const armorTypes = ["light", "medium", "heavy", "shield"];
-  const eqType = sys.type?.value?.toLowerCase?.() ?? "";
+  const typeValue = sys.type?.value?.toLowerCase?.() ?? "";
+  const baseItem  = sys.type?.baseItem?.toLowerCase?.() ?? "";
 
-  if (armorTypes.includes(eqType)) return true;
+  if (armorTypes.includes(typeValue)) return true;
+  if (armorTypes.includes(baseItem))  return true;
 
-  //
-  // 2) Fallback para a propriedade baseItem, caso alguém use tipos personalizados
-  //
-  const base = sys.type?.baseItem?.toLowerCase?.() ?? "";
-  if (armorTypes.includes(base)) return true;
-
-  //
-  // 3) Caso especial: escudos geralmente têm a propriedade "shd"
-  //
+  // 2) Propriedade típica de escudo (sistemas que marcam com "shd")
   if (Array.isArray(sys.properties) && sys.properties.includes("shd")) {
     return true;
   }
 
-  //
-  // 4) Caso especial: se realmente tiver AC definido (>0), trata como armor.
-  //    Aqui sim temos um behavior confiável, diferente de sys.armor não-nulo.
-  //
+  // 3) Se tiver um AC explícito (> 0), também tratamos como armadura
   const armorValue = Number(sys.armor?.value ?? 0);
   if (armorValue > 0) return true;
 
-  //
-  // Se chegou até aqui → não é armor
-  //
+  // Se chegou até aqui: não é armor-like
   return false;
 }
+
 
 function itemIsFocusLike(item) {
   // qualquer equipment que não seja armor/escudo
