@@ -1,67 +1,88 @@
-/* Container geral da janela de runas */
+/* --- Layout geral da janela --- */
 .mhh-runes-actor .mhh-runes-body {
   gap: 12px;
 }
 
-/* Cada linha de item */
+/* Títulos */
+.mhh-runes-actor h2 {
+  margin-bottom: 4px;
+}
+
+.mhh-runes-actor h3 {
+  margin-top: 16px;
+  margin-bottom: 8px;
+}
+
+/* Divider entre seções */
+.mhh-runes-actor hr {
+  margin: 16px 0;
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* --- Cada linha de item --- */
 .mhh-runes-actor .mhh-runes-item-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
   padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Lado ESQUERDO: ícone + texto */
-.mhh-runes-actor .mhh-runes-item-left {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex: 1 1 auto;
+/* Coluna 1: ícone */
+.mhh-runes-actor .mhh-runes-item-row__icon {
+  flex: 0 0 40px;
 }
 
 .mhh-runes-actor .mhh-runes-item-row__icon img {
-  border-radius: 3px;
+  width: 40px;
+  height: 40px;
+  border-radius: 4px;
 }
 
+/* Coluna 2: infos (nome + meta) */
 .mhh-runes-actor .mhh-runes-item-row__info {
-  display: flex;
-  flex-direction: column;
+  flex: 1 1 auto;
 }
 
 .mhh-runes-actor .mhh-runes-item-row__name {
   font-weight: 600;
+  margin-bottom: 2px;
 }
 
 .mhh-runes-actor .mhh-runes-item-row__meta {
+  font-size: 0.85rem;
   opacity: 0.8;
 }
 
-/* Lado DIREITO: select + botão */
-.mhh-runes-actor .mhh-runes-item-right {
+/* Coluna 3: slots (select + botões) */
+.mhh-runes-actor .mhh-runes-item-row__slots {
+  flex: 0 0 360px;          /* largura do bloco da direita */
   display: flex;
   flex-direction: column;
   gap: 4px;
-  flex: 0 0 360px; /* largura “bloco” da direita */
   align-items: flex-end;
 }
 
-.mhh-runes-actor .mhh-runes-slotRow {
+/* Cada linha de slot dentro da coluna direita */
+.mhh-runes-actor .mhh-runes-slot {
+  width: 100%;
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 6px;
-  width: 100%;
 }
 
-/* Select ocupa quase tudo, botão fica encostado à direita */
-.mhh-runes-actor .mhh-runes-slot-select {
+/* Select ocupa quase todo o espaço do slot */
+.mhh-runes-actor .mhh-runes-slot select,
+.mhh-runes-actor select.mhh-runes-slot-select {
   flex: 1 1 auto;
-  min-height: 32px;
+  min-height: 30px;
 }
 
-/* Botões “icon-only” (check e lixeira) menores */
-.mhh-runes-actor .icon-only {
+/* Botões “ícone apenas” (aplicar / remover) menores */
+.mhh-runes-actor .mhh-runes-slot-apply,
+.mhh-runes-actor .mhh-runes-slot-remove,
+.mhh-runes-actor button.icon-only {
   min-width: 30px;
   width: 30px;
   height: 30px;
@@ -71,21 +92,10 @@
   justify-content: center;
 }
 
-/* Label da runa já instalada (lado direito) */
+/* Label de runa instalada (se você estiver usando texto em vez de select) */
 .mhh-runes-actor .mhh-runes-slot__content .mhh-runes-slot__label {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 280px;
-}
-
-/* Um pouco de espaço extra entre a seção ofensiva/defensiva */
-.mhh-runes-actor h3 {
-  margin-top: 14px;
-  margin-bottom: 6px;
-}
-
-.mhh-runes-actor hr {
-  margin: 14px 0;
-  border-color: rgba(255, 255, 255, 0.12);
 }
