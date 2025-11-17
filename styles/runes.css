@@ -1,49 +1,91 @@
+/* Container geral da janela de runas */
 .mhh-runes-actor .mhh-runes-body {
-  gap: 8px;
+  gap: 12px;
 }
 
 /* Cada linha de item */
 .mhh-runes-actor .mhh-runes-item-row {
+  display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  padding: 8px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
-/* Lado esquerdo: ícone + nome */
+/* Lado ESQUERDO: ícone + texto */
 .mhh-runes-actor .mhh-runes-item-left {
-  flex: 1 1 auto;
+  display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  flex: 1 1 auto;
 }
 
-/* Lado direito: slots alinhados à direita */
+.mhh-runes-actor .mhh-runes-item-row__icon img {
+  border-radius: 3px;
+}
+
+.mhh-runes-actor .mhh-runes-item-row__info {
+  display: flex;
+  flex-direction: column;
+}
+
+.mhh-runes-actor .mhh-runes-item-row__name {
+  font-weight: 600;
+}
+
+.mhh-runes-actor .mhh-runes-item-row__meta {
+  opacity: 0.8;
+}
+
+/* Lado DIREITO: select + botão */
 .mhh-runes-actor .mhh-runes-item-right {
-  flex: 0 0 280px;
   display: flex;
   flex-direction: column;
   gap: 4px;
+  flex: 0 0 360px; /* largura “bloco” da direita */
   align-items: flex-end;
 }
 
-/* Linha de cada slot */
 .mhh-runes-actor .mhh-runes-slotRow {
-  width: 100%;
+  display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  width: 100%;
 }
 
-/* Select ocupando o espaço e botão pequeno */
+/* Select ocupa quase tudo, botão fica encostado à direita */
 .mhh-runes-actor .mhh-runes-slot-select {
   flex: 1 1 auto;
+  min-height: 32px;
 }
 
-.mhh-runes-actor .mhh-runes-slot-apply.icon-only,
-.mhh-runes-actor .mhh-runes-slot__remove.icon-only {
-  min-width: 28px;
-  height: 28px;
+/* Botões “icon-only” (check e lixeira) menores */
+.mhh-runes-actor .icon-only {
+  min-width: 30px;
+  width: 30px;
+  height: 30px;
   padding: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+}
+
+/* Label da runa já instalada (lado direito) */
+.mhh-runes-actor .mhh-runes-slot__content .mhh-runes-slot__label {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 280px;
+}
+
+/* Um pouco de espaço extra entre a seção ofensiva/defensiva */
+.mhh-runes-actor h3 {
+  margin-top: 14px;
+  margin-bottom: 6px;
+}
+
+.mhh-runes-actor hr {
+  margin: 14px 0;
+  border-color: rgba(255, 255, 255, 0.12);
 }
