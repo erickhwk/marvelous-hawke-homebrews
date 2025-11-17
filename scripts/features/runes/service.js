@@ -101,6 +101,15 @@ export function getMaxRuneSlots(item) {
   }
 }
 
+function getItemPropertiesArray(item) {
+  const raw = item?.system?.properties;
+
+  if (Array.isArray(raw)) return raw;
+  if (raw instanceof Set) return Array.from(raw);
+
+  return [];
+}
+
 /* ------------------------------------------------------------------------- */
 /*  Suporte de categoria/subtipo por tipo de item                            */
 /* ------------------------------------------------------------------------- */
@@ -108,23 +117,20 @@ export function getMaxRuneSlots(item) {
 export function itemSupportsRuneCategory(item, category, subtype) {
   if (!item) return false;
 
-  const sys   = item.system ?? {};
-  const props = Array.isArray(sys.properties) ? sys.properties : [];
+  const sys      = item.system ?? {};
+  const props    = getItemPropertiesArray(item);   // <- AQUI é a correção
   const isWeapon = item.type === "weapon";
 
   // normalização de categoria e subtipo
-  const catRaw  = category ?? "";
-  const subRaw  = subtype ?? "";
+  const catRaw = category ?? "";
+  const subRaw = subtype ?? "";
 
   const cat  = String(catRaw).toLowerCase();
   const sub  = String(subRaw).toLowerCase();
   const norm = sub.replace(/[\s_]+/g, "-"); // "Arcane Precision" -> "arcane-precision"
 
-  // ---------- REGRAS ESPECÍFICAS PEDIDAS ----------
-
-  // 1) Arcane Precision / Arcane Oppression:
-  //    - item MUST ser equipment
-  //    - item MUST ter "foc" em system.properties
+  // ---------- REGRA 1: Arcane Precision / Arcane Oppression ----------
+  // deve ser equipment com "foc"
   if (["arcane-precision", "arcane-oppression"].includes(norm)) {
     const isFocus =
       item.type === "equipment" &&
@@ -140,7 +146,7 @@ export function itemSupportsRuneCategory(item, category, subtype) {
     return isFocus;
   }
 
-  // 2) Runas ofensivas "de arma": precision / damage / elemental
+  // ---------- REGRA 2: ofensivas de arma (precision / damage / elemental) ----------
   if (["precision", "damage", "elemental"].includes(norm)) {
     const result = isWeapon;
     console.debug("[MHH][Runes] compat (weapon offensive)", {
@@ -152,22 +158,19 @@ export function itemSupportsRuneCategory(item, category, subtype) {
     return result;
   }
 
-  // 3) Runas defensivas clássicas: reinforcement / protection
+  // ---------- REGRA 3: defensivas (reinforcement / protection) ----------
   if (["reinforcement", "protection"].includes(norm)) {
-    // aqui podemos usar a lógica de armor-like que você já tem
-    const armorLike = (() => {
-      const armorTypes = ["light", "medium", "heavy", "shield"];
-      const typeValue  = sys.type?.value?.toLowerCase?.() ?? "";
-      const baseItem   = sys.type?.baseItem?.toLowerCase?.() ?? "";
-      const hasShieldProp = props.includes("shd");
-      const armorValue = Number(sys.armor?.value ?? 0);
+    const armorTypes = ["light", "medium", "heavy", "shield"];
+    const typeValue  = sys.type?.value?.toLowerCase?.() ?? "";
+    const baseItem   = sys.type?.baseItem?.toLowerCase?.() ?? "";
+    const hasShieldProp = props.includes("shd");
+    const armorValue = Number(sys.armor?.value ?? 0);
 
-      if (armorTypes.includes(typeValue)) return true;
-      if (armorTypes.includes(baseItem))  return true;
-      if (hasShieldProp)                  return true;
-      if (armorValue > 0)                 return true;
-      return false;
-    })();
+    const armorLike =
+      armorTypes.includes(typeValue) ||
+      armorTypes.includes(baseItem)  ||
+      hasShieldProp                  ||
+      armorValue > 0;
 
     console.debug("[MHH][Runes] compat (defensive armor-like)", {
       itemName: item.name,
@@ -179,7 +182,7 @@ export function itemSupportsRuneCategory(item, category, subtype) {
     return armorLike;
   }
 
-  // 4) Qualquer outra coisa: por padrão, NÃO é compatível
+  // ---------- fallback: qualquer outra coisa não é compatível ----------
   console.debug("[MHH][Runes] compat (unknown subtype -> false)", {
     itemName: item.name,
     itemType: item.type,
@@ -187,8 +190,6 @@ export function itemSupportsRuneCategory(item, category, subtype) {
   });
   return false;
 }
-
-
 
 /* ------------------------------------------------------------------------- */
 /*  Leitura / escrita de runas no item                                       */
