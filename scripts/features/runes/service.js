@@ -1,59 +1,20 @@
 // scripts/features/runes/service.js
+import { MODULE_ID, FLAGS, V } from "../../core/constants.js";
+import { path } from "../../core/utils.js";
 
-import { MODULE_ID, FLAGS } from "../../core/constants.js";
-
-// -----------------------------------------------------------------------------
-// Constantes / helpers de tiers e compatibilidade
-// -----------------------------------------------------------------------------
-
-const ITEM_RUNES_KEY    = FLAGS.ITEM_RUNES        ?? "runes";
-const AE_RUNES_DEF_MARK = FLAGS.AE_RUNES_DEF_MARK ?? "mhhRunesDefEffect";
-const SOCKET_FLAG       = FLAGS.RUNE_SOCKET_HOST  ?? "runeHost";
+/* ------------------------------------------------------------------------- */
+/*  Helpers gerais                                                           */
+/* ------------------------------------------------------------------------- */
 
 const TIER_ORDER = ["lesser", "greater", "major"];
 
-function normalizeRarity(raw) {
-  if (!raw) return "common";
-  const s = String(raw).toLowerCase().replace(/\s+/g, "");
-  if (s === "uncommon") return "uncommon";
-  if (s === "rare") return "rare";
-  if (s === "veryrare" || s === "very_rare") return "very-rare";
-  if (s === "legendary") return "legendary";
-  return "common";
-}
-
-/**
- * Quantidade máxima de runas que um item pode ter, baseado na raridade.
- *
- * Common:        0 slots
- * Uncommon/Rare: 1 slot
- * Very Rare:     2 slots
- * Legendary:     3 slots
- */
-function getMaxRuneSlots(item) {
-  const rarityRaw = item?.system?.rarity ?? "common";
-  const rarity = normalizeRarity(rarityRaw);
-
-  switch (rarity) {
-    case "uncommon":
-    case "rare":
-      return 1;
-    case "very-rare":
-      return 2;
-    case "legendary":
-      return 3;
-    default:
-      return 0;
-  }
-}
-
-function tierRank(tier) {
-  const i = TIER_ORDER.indexOf(String(tier));
-  return i >= 0 ? i : 0;
+function tierRank(t) {
+  const i = TIER_ORDER.indexOf(String(t || "").toLowerCase());
+  return i < 0 ? 0 : i;
 }
 
 function tierToBonus(tier) {
-  switch (tier) {
+  switch (String(tier || "").toLowerCase()) {
     case "greater": return 2;
     case "major":   return 3;
     case "lesser":
@@ -61,13 +22,12 @@ function tierToBonus(tier) {
   }
 }
 
-function tierToDenomination(tier) {
-  // dano elemental: d4 / d6 / d8
-  switch (tier) {
-    case "greater": return 6; // d6
-    case "major":   return 8; // d8
+function tierToDie(tier) {
+  switch (String(tier || "").toLowerCase()) {
+    case "greater": return 6;
+    case "major":   return 8;
     case "lesser":
-    default:        return 4; // d4
+    default:        return 4;
   }
 }
 
@@ -85,8 +45,6 @@ function itemIsWeapon(item) {
 function itemIsArmorLike(item) {
   if (item?.type !== "equipment") return false;
   const sys = item.system ?? {};
-
-  // armadura/escudo do dnd5e geralmente tem system.armor
   if (sys.armor) return true;
 
   const eqType = sys.equipmentType ?? sys.type?.value;
@@ -95,189 +53,280 @@ function itemIsArmorLike(item) {
   return s.includes("armor") || s.includes("shield");
 }
 
-function itemSupportsRuneCategory(item, category, subtype) {
-  if (!category) return true;
+function itemIsFocusLike(item) {
+  // tratamos qualquer equipment que NÃO seja armor/escudo como foco
+  return item?.type === "equipment" && !itemIsArmorLike(item);
+}
+
+/* ------------------------------------------------------------------------- */
+/*  Slots por raridade                                                       */
+/* ------------------------------------------------------------------------- */
+
+function normalizeRarity(raw) {
+  if (!raw) return "common";
+
+  if (typeof raw === "object") {
+    raw = raw.value ?? raw.label ?? "";
+  }
+
+  const s = String(raw).toLowerCase().replace(/\s+/g, "");
+  if (s === "rarity") return "common"; // valor default do select
+  if (s === "uncommon") return "uncommon";
+  if (s === "rare") return "rare";
+  if (s === "veryrare" || s === "very_rare") return "very-rare";
+  if (s === "legendary") return "legendary";
+  return "common";
+}
+
+/**
+ * Common:        0 slots
+ * Uncommon/Rare: 1 slot
+ * Very Rare:     2 slots
+ * Legendary:     3 slots
+ */
+export function getMaxRuneSlots(item) {
+  const rarityRaw = path(item, "system.rarity") ?? "common";
+  const rarity = normalizeRarity(rarityRaw);
+
+  switch (rarity) {
+    case "uncommon":
+    case "rare":
+      return 1;
+    case "very-rare":
+      return 2;
+    case "legendary":
+      return 3;
+    default:
+      return 0;
+  }
+}
+
+/* ------------------------------------------------------------------------- */
+/*  Suporte de categoria/subtipo por tipo de item                            */
+/* ------------------------------------------------------------------------- */
+
+export function itemSupportsRuneCategory(item, category, subtype) {
+  category = String(category || "").toLowerCase();
+  subtype  = String(subtype  || "").toLowerCase();
 
   if (category === "offensive") {
-    // Arcane Precision / Arcane Oppression → em equipment (foco), não em weapon
-    if (subtype === "arcane-precision" || subtype === "arcane-oppression") {
-      return item?.type === "equipment";
+    // runas ofensivas "de arma"
+    if (["precision", "damage", "elemental"].includes(subtype)) {
+      return itemIsWeapon(item);
     }
-    // demais ofensivas → armas
+    // runas arcanas: só em focos
+    if (["arcane-precision", "arcane-oppression"].includes(subtype)) {
+      return itemIsFocusLike(item);
+    }
+    // fallback
     return itemIsWeapon(item);
   }
 
   if (category === "defensive") {
+    // defensivas: armaduras e escudos
     return itemIsArmorLike(item);
   }
 
-  return true;
+  return false;
 }
 
-// -----------------------------------------------------------------------------
-// Flags de runas em itens
-// -----------------------------------------------------------------------------
+/* ------------------------------------------------------------------------- */
+/*  Leitura / escrita de runas no item                                       */
+/* ------------------------------------------------------------------------- */
+
+/**
+ * Estrutura em FLAGS.ITEM_RUNES:
+ * [
+ *   {
+ *     runeCategory: "offensive" | "defensive",
+ *     runeSubtype:  "precision" | "damage" | "elemental" | "reinforcement" | "protection" | ...
+ *     runeTier:     "lesser" | "greater" | "major",
+ *     runeDamageType?: "fire" | "cold" | ...,
+ *     runeSourceUuid: "uuid do item de runa"
+ *   },
+ *   ...
+ * ]
+ */
 
 export function getItemRunes(item) {
-  const arr = item?.getFlag(MODULE_ID, ITEM_RUNES_KEY) ?? [];
-  return Array.isArray(arr) ? arr : [];
+  if (!item) return [];
+  const list = item.getFlag(MODULE_ID, FLAGS.ITEM_RUNES);
+  if (!Array.isArray(list)) return [];
+  return list.filter(r => r && typeof r.runeSubtype === "string");
 }
 
-export async function setItemRunes(item, list) {
-  const old = getItemRunes(item);
-  const next = Array.isArray(list) ? list : [];
+export async function setItemRunes(item, entries) {
+  const clean = (entries ?? []).filter(r => r && typeof r.runeSubtype === "string");
+  return item.setFlag(MODULE_ID, FLAGS.ITEM_RUNES, clean);
+}
 
-  // Descobrir quais runas foram removidas (por sourceUuid)
-  const removed = old.filter(o =>
-    o?.runeSourceUuid &&
-    !next.some(n => n?.runeSourceUuid === o.runeSourceUuid)
-  );
+/* ------------------------------------------------------------------------- */
+/*  Activities de arma (ofensivas)                                           */
+/* ------------------------------------------------------------------------- */
 
-  for (const r of removed) {
-    try {
-      const runeDoc = await fromUuid(r.runeSourceUuid);
-      if (!runeDoc) continue;
-      // Só limpa se ela estava marcada como encaixada neste item
-      const host = runeDoc.getFlag(MODULE_ID, SOCKET_FLAG);
-      if (host === item.uuid) {
-        await runeDoc.unsetFlag(MODULE_ID, SOCKET_FLAG);
-      }
-    } catch (err) {
-      console.warn("[MHH][Runes] Falha ao limpar socket da runa removida", r, err);
+function getPrimaryAttackActivitySource(item) {
+  const coll = item.system?.activities;
+  if (!coll) return null;
+
+  // coll é ActivityCollection
+  let attackActivity = null;
+  for (const act of coll) {
+    if (act?.type === "attack") {
+      attackActivity = act;
+      break;
     }
   }
+  if (!attackActivity) return null;
 
-  return item.setFlag(MODULE_ID, ITEM_RUNES_KEY, next);
+  // usamos o _source para garantir que é compatível com system.activities
+  return foundry.utils.duplicate(attackActivity._source ?? attackActivity);
 }
 
-// -----------------------------------------------------------------------------
-// Activities de ataque (armas)
-// -----------------------------------------------------------------------------
+// flags internas só deste arquivo (não estão em constants)
+const FLAG_BASE_ATTACK_BONUS   = "baseAttackBonus";
+const FLAG_BASE_DAMAGE_BONUS   = "baseDamageBonus";
+const FLAG_BASE_ELEMENTAL_PARTS = "baseElementalParts";
 
-export function getPrimaryAttackActivitySource(item) {
-  const activities = item._source?.system?.activities;
-  if (!activities) return null;
-
-  for (const [id, data] of Object.entries(activities)) {
-    if (data?.type === "attack") {
-      return {
-        id,
-        data: foundry.utils.duplicate(data),
-        all:  foundry.utils.duplicate(activities)
-      };
-    }
-  }
-
-  console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para o item", item);
-  return null;
-}
-
-// -----------------------------------------------------------------------------
-// Aplicar efeitos ofensivos (weapon activities)
-// -----------------------------------------------------------------------------
-
+/**
+ * Aplica runas OFENSIVAS diretamente na activity de ataque da arma.
+ * - precision: bônus de ataque
+ * - damage:    bônus fixo de dano
+ * - elemental: adiciona dado elemental
+ *
+ * Para armaduras/focos, esta função é ignorada (efeitos vão pro ator).
+ */
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
-  if (item.type !== "weapon") {
+  // Só armas têm activity de ataque relevante
+  if (!itemIsWeapon(item)) {
     console.debug("[MHH][Runes] applyRuneEffectsToItem ignorado para item não-arma:", item.name);
     return;
   }
 
-  const runes   = getItemRunes(item);
-  const actInfo = getPrimaryAttackActivitySource(item);
-  if (!actInfo) return;
+  // Lê runas instaladas
+  const runes = getItemRunes(item).filter(r => r.runeCategory === "offensive");
+  const attackSrc = getPrimaryAttackActivitySource(item);
+  if (!attackSrc) {
+    console.warn("[MHH][Runes] Nenhuma Activity de ataque encontrada para o item", item);
+    return;
+  }
 
-  const { id, data, all } = actInfo;
+  // Baseline: atac + dano + partes elementais NÃO vindas de runa
+  let baseAttackBonus  = item.getFlag(MODULE_ID, FLAG_BASE_ATTACK_BONUS);
+  let baseDamageBonus  = item.getFlag(MODULE_ID, FLAG_BASE_DAMAGE_BONUS);
+  let baseElementParts = item.getFlag(MODULE_ID, FLAG_BASE_ELEMENTAL_PARTS);
 
-  data.attack = data.attack ?? {};
-  data.damage = data.damage ?? { includeBase: true, parts: [] };
+  if (baseAttackBonus === undefined || baseDamageBonus === undefined || !Array.isArray(baseElementParts)) {
+    const dmgParts = Array.isArray(attackSrc.damage?.parts) ? attackSrc.damage.parts : [];
 
-  // -------- Precision → attack.bonus --------
-  let precisionBonus = 0;
+    baseAttackBonus  = Number(attackSrc.attack?.bonus || 0) || 0;
+    baseDamageBonus  = Number(dmgParts[0]?.bonus || 0) || 0;
+    baseElementParts = dmgParts.slice(1); // tudo além do primeiro dano "base"
+
+    await item.setFlag(MODULE_ID, FLAG_BASE_ATTACK_BONUS, baseAttackBonus);
+    await item.setFlag(MODULE_ID, FLAG_BASE_DAMAGE_BONUS, baseDamageBonus);
+    await item.setFlag(MODULE_ID, FLAG_BASE_ELEMENTAL_PARTS, baseElementParts);
+  }
+
+  let finalAttackBonus = baseAttackBonus;
+  let flatDamageBonus  = baseDamageBonus;
+  const extraElementalParts = [];
+
   for (const r of runes) {
     if (!r) continue;
-    if (r.runeSubtype === "precision") {
-      precisionBonus += tierToBonus(r.runeTier);
+    const tier  = r.runeTier ?? "lesser";
+    const bonus = tierToBonus(tier);
+    const sub   = String(r.runeSubtype || "").toLowerCase();
+
+    switch (sub) {
+      case "precision":
+        finalAttackBonus += bonus;
+        break;
+
+      case "damage":
+        flatDamageBonus += bonus;
+        break;
+
+      case "elemental": {
+        const dmgType = r.runeDamageType || "fire";
+        extraElementalParts.push({
+          bonus: "",
+          custom: { enabled: false },
+          denomination: tierToDie(tier),
+          number: 1,
+          scaling: { number: 1 },
+          types: [dmgType]
+        });
+        break;
+      }
+
+      default:
+        break;
     }
   }
-  data.attack.bonus = precisionBonus ? String(precisionBonus) : "";
 
-  // -------- Damage / Elemental → damage.parts --------
-  // Regra: parts representa APENAS dano extra (base vem de includeBase).
+  // Construímos nova activity a partir do baseline
+  const activity = foundry.utils.duplicate(attackSrc);
 
-  const parts = [];
+  // Attack bonus
+  activity.attack = activity.attack || {};
+  activity.attack.bonus = String(finalAttackBonus || "");
 
-  // Damage: bônus fixo
-  let flatDamageBonus = 0;
-  for (const r of runes) {
-    if (!r) continue;
-    if (r.runeSubtype === "damage") {
-      flatDamageBonus += tierToBonus(r.runeTier);
+  // Damage parts
+  const basePart = Array.isArray(attackSrc.damage?.parts) && attackSrc.damage.parts[0]
+    ? foundry.utils.duplicate(attackSrc.damage.parts[0])
+    : {
+        bonus: "",
+        custom: { enabled: false },
+        denomination: 8,
+        number: 1,
+        scaling: { number: 1 },
+        types: []
+      };
+
+  basePart.bonus = String(flatDamageBonus || "");
+
+  const parts = [basePart];
+
+  // Reaplicamos os danos elementais "nativos" do item
+  if (Array.isArray(baseElementParts) && baseElementParts.length) {
+    for (const p of baseElementParts) {
+      parts.push(foundry.utils.duplicate(p));
     }
   }
-  if (flatDamageBonus) {
-    parts.push({
-      number: 1,
-      denomination: null,              // bônus fixo, sem dado
-      bonus: String(flatDamageBonus),
-      types: [],
-      custom: { enabled: false },
-      scaling: { number: 1 }
-    });
+
+  // E então as partes criadas pelas runas elementais
+  for (const p of extraElementalParts) {
+    parts.push(foundry.utils.duplicate(p));
   }
 
-  // Elemental: 1d4/1d6/1d8 do tipo X
-  const elementalParts = [];
-  for (const r of runes) {
-    if (!r) continue;
-    if (r.runeSubtype !== "elemental") continue;
+  activity.damage = activity.damage || {};
+  activity.damage.includeBase = activity.damage.includeBase ?? true;
+  activity.damage.parts = parts;
 
-    const denom = tierToDenomination(r.runeTier);
-    const type  = r.runeDamageType || "fire";
+  // Atualiza system.activities no item
+  const activitiesData = foundry.utils.duplicate(path(item, "_source.system.activities") ?? {});
+  activitiesData[activity._id] = activity;
 
-    elementalParts.push({
-      number: 1,
-      denomination: denom,             // 4 → d4, 6 → d6, 8 → d8
-      bonus: "",
-      types: [type],
-      custom: { enabled: false },
-      scaling: { number: 1 }
-    });
-  }
-
-  data.damage.parts = [...parts, ...elementalParts];
-
-  all[id] = data;
-
-  console.log("[MHH][Runes] applyRuneEffectsToItem", {
-    item: item.name,
-    runes,
-    precisionBonus,
-    flatDamageBonus,
-    elementalParts,
-    activityId: id,
-    activity: data
-  });
-
-  await item.update({ "system.activities": all });
+  await item.update({ "system.activities": activitiesData });
 }
 
-// -----------------------------------------------------------------------------
-// Runas defensivas → ActiveEffect no actor
-// -----------------------------------------------------------------------------
+/* ------------------------------------------------------------------------- */
+/*  Efeitos defensivos / arcanos no ATOR                                     */
+/* ------------------------------------------------------------------------- */
 
 export async function applyDefensiveRunesToActor(actor) {
   if (!actor) return;
 
-  // Remove TODOS os efeitos antigos de runas defensivas deste ator
-  const prevEffects = actor.effects.filter(
-    e => e.getFlag(MODULE_ID, FLAGS.AE_RUNES_DEF_MARK) === true
+  // Remove TODOS os efeitos antigos de runas defensivas/arcanas deste ator
+  const prev = actor.effects.filter(e =>
+    e.getFlag(MODULE_ID, FLAGS.AE_RUNES_DEF_MARK) === true
   );
-  if (prevEffects.length) {
+  if (prev.length) {
     await actor.deleteEmbeddedDocuments(
       "ActiveEffect",
-      prevEffects.map(e => e.id)
+      prev.map(e => e.id)
     );
   }
 
@@ -286,22 +335,115 @@ export async function applyDefensiveRunesToActor(actor) {
   let spellAttackBonus = 0;
   let spellDcBonus     = 0;
 
-  // ... resto da função como já estava (somando reinforcement, protection,
-  // arcane-precision, arcane-oppression e criando 1 AE no final)
+  // Varrendo apenas itens equipados
+  for (const item of actor.items) {
+    if (!isItemEquipped(item)) continue;
+
+    const runes = getItemRunes(item);
+    if (!Array.isArray(runes) || !runes.length) continue;
+
+    for (const r of runes) {
+      if (!r) continue;
+
+      const tier  = r.runeTier ?? "lesser";
+      const bonus = tierToBonus(tier);
+      const cat   = String(r.runeCategory || "").toLowerCase();
+      const sub   = String(r.runeSubtype  || "").toLowerCase();
+
+      // ---- DEFENSIVAS: armaduras / escudos ----
+      if (cat === "defensive") {
+        if (sub === "reinforcement") {
+          acBonus += bonus;
+        }
+        if (sub === "protection") {
+          saveBonus += bonus;
+        }
+      }
+
+      // ---- ARCANAS: em focos, mas categoria continua sendo "offensive" ----
+      if (cat === "offensive" && itemIsFocusLike(item)) {
+        if (sub === "arcane-precision") {
+          spellAttackBonus += bonus;
+        }
+        if (sub === "arcane-oppression") {
+          spellDcBonus += bonus;
+        }
+      }
+    }
+  }
+
+  if (!acBonus && !saveBonus && !spellAttackBonus && !spellDcBonus) {
+    console.debug("[MHH][Runes] applyDefensiveRunesToActor → nenhum bônus encontrado para", actor.name);
+    return;
+  }
+
+  const changes = [];
+
+  if (acBonus) {
+    changes.push({
+      key: "system.attributes.ac.bonus",
+      mode: V.AE_ADD,
+      value: String(acBonus)
+    });
+  }
+
+  if (saveBonus) {
+    changes.push({
+      key: "system.bonuses.abilities.save",
+      mode: V.AE_ADD,
+      value: String(saveBonus)
+    });
+  }
+
+  if (spellAttackBonus) {
+    changes.push(
+      {
+        key: "system.bonuses.msak.attack",
+        mode: V.AE_ADD,
+        value: String(spellAttackBonus)
+      },
+      {
+        key: "system.bonuses.rsak.attack",
+        mode: V.AE_ADD,
+        value: String(spellAttackBonus)
+      }
+    );
+  }
+
+  if (spellDcBonus) {
+    changes.push({
+      key: "system.bonuses.spell.dc",
+      mode: V.AE_ADD,
+      value: String(spellDcBonus)
+    });
+  }
+
+  await actor.createEmbeddedDocuments("ActiveEffect", [{
+    name: "Runes (defensive)",
+    icon: "icons/magic/defensive/shield-barrier-glowing-triangle-blue.webp",
+    origin: actor.uuid,
+    disabled: false,
+    changes,
+    flags: {
+      [MODULE_ID]: {
+        [FLAGS.AE_RUNES_DEF_MARK]: true
+      }
+    }
+  }]);
+
+  console.debug("[MHH][Runes] applyDefensiveRunesToActor → criado AE para", actor.name,
+    { acBonus, saveBonus, spellAttackBonus, spellDcBonus });
 }
 
-
-
-// -----------------------------------------------------------------------------
-// Instalar / remover runas em itens
-// -----------------------------------------------------------------------------
+/* ------------------------------------------------------------------------- */
+/*  Instalar / remover runas                                                 */
+/* ------------------------------------------------------------------------- */
 
 export async function installRuneOnItem(item, runeItem) {
   if (!item || !runeItem) {
     return { ok: false, reason: "NO_ITEM" };
   }
 
-  // Dados da runa a partir dos flags do item de runa
   const subtype  = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_SUBTYPE);
   const category = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_CATEGORY);
   const tier     = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_TIER) ?? "lesser";
@@ -310,12 +452,11 @@ export async function installRuneOnItem(item, runeItem) {
     return { ok: false, reason: "INVALID_RUNE_DATA" };
   }
 
-  // Valida compatibilidade item x categoria/subtipo
   if (!itemSupportsRuneCategory(item, category, subtype)) {
     return { ok: false, reason: "ITEM_NOT_COMPATIBLE" };
   }
 
-  // Verificar se esta runa JÁ está encaixada em outro item
+  // Verificar se a runa já está encaixada em outro item
   const currentHost = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST);
   if (currentHost && currentHost !== item.uuid) {
     return {
@@ -325,9 +466,8 @@ export async function installRuneOnItem(item, runeItem) {
     };
   }
 
-  // runeDamageType só faz sentido para runas elementais
   let runeDamageType = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_DAMAGE_TYPE);
-  if (subtype === "elemental") {
+  if (String(subtype).toLowerCase() === "elemental") {
     runeDamageType = runeDamageType || "fire";
   } else {
     runeDamageType = undefined;
@@ -345,7 +485,7 @@ export async function installRuneOnItem(item, runeItem) {
 
   const runes = getItemRunes(item);
 
-  // Regra: 1 runa por subtipo
+  // 1 runa por subtipo
   const idxSameSubtype = runes.findIndex(r => r?.runeSubtype === newRune.runeSubtype);
 
   if (idxSameSubtype >= 0) {
@@ -353,7 +493,6 @@ export async function installRuneOnItem(item, runeItem) {
     const oldRank  = tierRank(existing.runeTier);
     const newRank  = tierRank(newRune.runeTier);
 
-    // nova runa é pior ou igual → não substitui
     if (newRank <= oldRank) {
       return {
         ok: false,
@@ -363,7 +502,6 @@ export async function installRuneOnItem(item, runeItem) {
       };
     }
 
-    // nova é melhor → substitui
     runes[idxSameSubtype] = newRune;
     await setItemRunes(item, runes);
     await runeItem.setFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST, item.uuid);
@@ -378,7 +516,7 @@ export async function installRuneOnItem(item, runeItem) {
     };
   }
 
-  // não havia runa desse subtipo ainda → verifica slots
+  // slots máximos
   const maxSlots = getMaxRuneSlots(item);
   if (maxSlots <= 0) {
     return { ok: false, reason: "NO_RUNE_SLOTS" };
@@ -400,12 +538,53 @@ export async function installRuneOnItem(item, runeItem) {
   };
 }
 
-export async function removeAllRunesFromItem(item) {
-  if (!item) return;
+/**
+ * Remove runas do item.
+ * - predicate: function(rune) → boolean, ou
+ *   string com runeSourceUuid para remoção direta.
+ */
+export async function removeRuneFromItem(item, predicate) {
+  const runes = getItemRunes(item);
+  if (!runes.length) {
+    return { ok: false, reason: "NO_RUNES" };
+  }
 
-  await setItemRunes(item, []);
+  const removed = [];
+  const keep    = [];
+
+  for (const r of runes) {
+    let match = false;
+    if (!predicate) {
+      match = true;
+    } else if (typeof predicate === "function") {
+      match = !!predicate(r);
+    } else if (typeof predicate === "string") {
+      match = r.runeSourceUuid === predicate;
+    }
+
+    if (match) removed.push(r);
+    else keep.push(r);
+  }
+
+  if (!removed.length) {
+    return { ok: false, reason: "NO_MATCH" };
+  }
+
+  await setItemRunes(item, keep);
   await applyRuneEffectsToItem(item);
 
-  const actor = item.parent;
-  if (actor) await applyDefensiveRunesToActor(actor);
+  // Limpa o socket host das runas removidas
+  for (const r of removed) {
+    if (!r.runeSourceUuid) continue;
+    try {
+      const runeItem = await fromUuid(r.runeSourceUuid).catch(() => null);
+      if (runeItem?.getFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST) === item.uuid) {
+        await runeItem.unsetFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST);
+      }
+    } catch (e) {
+      console.warn("[MHH][Runes] Falha ao limpar host da runa removida:", e);
+    }
+  }
+
+  return { ok: true, reason: "REMOVED", removed, total: keep.length };
 }
