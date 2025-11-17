@@ -78,7 +78,7 @@
 .mhh-runes-actor select.mhh-runes-slot-select {
   flex: 1 1 auto;
   min-height: 30px;
-  width: auto;
+  width: 300px;
 }
 
 /* Botões “ícone apenas” (aplicar / remover) menores */
