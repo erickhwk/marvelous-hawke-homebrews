@@ -1,8 +1,49 @@
-.mhh-runes-item-row {
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+.mhh-runes-actor .mhh-runes-body {
+  gap: 8px;
 }
 
-.mhh-runes-item-row:last-child {
-  border-bottom: none;
+/* Cada linha de item */
+.mhh-runes-actor .mhh-runes-item-row {
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* Lado esquerdo: ícone + nome */
+.mhh-runes-actor .mhh-runes-item-left {
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Lado direito: slots alinhados à direita */
+.mhh-runes-actor .mhh-runes-item-right {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-end;
+}
+
+/* Linha de cada slot */
+.mhh-runes-actor .mhh-runes-slotRow {
+  width: 100%;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+/* Select ocupando o espaço e botão pequeno */
+.mhh-runes-actor .mhh-runes-slot-select {
+  flex: 1 1 auto;
+}
+
+.mhh-runes-actor .mhh-runes-slot-apply.icon-only,
+.mhh-runes-actor .mhh-runes-slot__remove.icon-only {
+  min-width: 28px;
+  height: 28px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
