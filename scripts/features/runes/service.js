@@ -106,35 +106,69 @@ export function getMaxRuneSlots(item) {
 /* ------------------------------------------------------------------------- */
 
 export function itemSupportsRuneCategory(item, category, subtype) {
+  const origCategory = category;
+  const origSubtype  = subtype;
+
   category = String(category || "").toLowerCase();
   subtype  = String(subtype  || "").toLowerCase();
-
-  // normaliza subtipo pra evitar variações
   const normSub = subtype.replace(/[\s_]+/g, "-"); // "Arcane Precision" → "arcane-precision"
 
+  const sys   = item?.system ?? {};
+  const props = Array.isArray(sys.properties) ? sys.properties : [];
+  const typeValue = sys.type?.value;
+  const baseItem  = sys.type?.baseItem;
+
+  console.log("[MHH][Runes] itemSupportsRuneCategory(ENTER)", {
+    itemName: item?.name,
+    itemType: item?.type,
+    typeValue,
+    baseItem,
+    props,
+    origCategory,
+    origSubtype,
+    category,
+    subtype,
+    normSub
+  });
+
+  let result = false;
+
   if (category === "offensive") {
-    // Runas ofensivas de arma
+    // runas ofensivas "de arma"
     if (["precision", "damage", "elemental"].includes(normSub)) {
-      return itemIsWeapon(item);
+      result = itemIsWeapon(item);
+      console.log("[MHH][Runes] compat check ofensiva (arma)", { normSub, result });
     }
-
-    // Runas arcanas: SÓ foco ("foc"), não-armor
-    if (["arcane-precision", "arcane-oppression"].includes(normSub)) {
-      return itemIsFocusLike(item);
+    // runas arcanas: só foco ("foc"), não-armor
+    else if (["arcane-precision", "arcane-oppression"].includes(normSub)) {
+      result = itemIsFocusLike(item);
+      console.log("[MHH][Runes] compat check ofensiva (arcane/focus)", { normSub, result });
     }
-
-    // fallback conservador: se subtipo ofensivo desconhecido, só deixamos em arma
-    return itemIsWeapon(item);
+    // fallback: ofensiva desconhecida → só arma
+    else {
+      result = itemIsWeapon(item);
+      console.log("[MHH][Runes] compat check ofensiva (fallback arma)", { normSub, result });
+    }
+  }
+  else if (category === "defensive") {
+    result = itemIsArmorLike(item);
+    console.log("[MHH][Runes] compat check defensiva (armor-like)", { normSub, result });
+  }
+  else {
+    console.log("[MHH][Runes] categoria desconhecida, result = false");
+    result = false;
   }
 
-  if (category === "defensive") {
-    // defensivas: armor/shield
-    return itemIsArmorLike(item);
-  }
+  console.log("[MHH][Runes] itemSupportsRuneCategory(RETURN)", {
+    itemName: item?.name,
+    normSub,
+    category,
+    result
+  });
 
-  // categoria desconhecida → não suporta
-  return false;
+  return result;
 }
+
 
 /* ------------------------------------------------------------------------- */
 /*  Leitura / escrita de runas no item                                       */
@@ -446,7 +480,14 @@ export async function applyDefensiveRunesToActor(actor) {
 /* ------------------------------------------------------------------------- */
 
 export async function installRuneOnItem(item, runeItem) {
+  console.log("[MHH][Runes] installRuneOnItem(ENTER)", {
+    itemName: item?.name,
+    itemType: item?.type,
+    runeName: runeItem?.name
+  });
+
   if (!item || !runeItem) {
+    console.warn("[MHH][Runes] installRuneOnItem → NO_ITEM");
     return { ok: false, reason: "NO_ITEM" };
   }
 
@@ -454,17 +495,37 @@ export async function installRuneOnItem(item, runeItem) {
   const category = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_CATEGORY);
   const tier     = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_TIER) ?? "lesser";
 
+  console.log("[MHH][Runes] installRuneOnItem → rune flags", {
+    subtype,
+    category,
+    tier
+  });
+
   if (!subtype) {
+    console.warn("[MHH][Runes] installRuneOnItem → INVALID_RUNE_DATA (sem subtype)");
     return { ok: false, reason: "INVALID_RUNE_DATA" };
   }
 
-  if (!itemSupportsRuneCategory(item, category, subtype)) {
+  const supports = itemSupportsRuneCategory(item, category, subtype);
+
+  console.log("[MHH][Runes] installRuneOnItem → supports?", {
+    supports
+  });
+
+  if (!supports) {
+    console.warn("[MHH][Runes] installRuneOnItem → ITEM_NOT_COMPATIBLE", {
+      itemName: item.name,
+      runeName: runeItem.name,
+      category,
+      subtype
+    });
     return { ok: false, reason: "ITEM_NOT_COMPATIBLE" };
   }
 
   // Verificar se a runa já está encaixada em outro item
   const currentHost = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST);
   if (currentHost && currentHost !== item.uuid) {
+    console.warn("[MHH][Runes] installRuneOnItem → RUNE_ALREADY_SOCKETED", { currentHost });
     return {
       ok: false,
       reason: "RUNE_ALREADY_SOCKETED",
@@ -473,7 +534,9 @@ export async function installRuneOnItem(item, runeItem) {
   }
 
   let runeDamageType = runeItem.getFlag(MODULE_ID, FLAGS.RUNE_DAMAGE_TYPE);
-  if (String(subtype).toLowerCase() === "elemental") {
+  const normSubtype  = String(subtype).toLowerCase().replace(/[\s_]+/g, "-");
+
+  if (normSubtype === "elemental") {
     runeDamageType = runeDamageType || "fire";
   } else {
     runeDamageType = undefined;
@@ -500,6 +563,10 @@ export async function installRuneOnItem(item, runeItem) {
     const newRank  = tierRank(newRune.runeTier);
 
     if (newRank <= oldRank) {
+      console.log("[MHH][Runes] installRuneOnItem → RUNE_WEAKER_OR_EQUAL_EXISTS", {
+        existing,
+        newRune
+      });
       return {
         ok: false,
         reason: "RUNE_WEAKER_OR_EQUAL_EXISTS",
@@ -513,6 +580,8 @@ export async function installRuneOnItem(item, runeItem) {
     await runeItem.setFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST, item.uuid);
     await applyRuneEffectsToItem(item);
 
+    console.log("[MHH][Runes] installRuneOnItem(RETURN) → REPLACED_WEAKER");
+
     return {
       ok: true,
       reason: "REPLACED_WEAKER",
@@ -525,9 +594,11 @@ export async function installRuneOnItem(item, runeItem) {
   // slots máximos
   const maxSlots = getMaxRuneSlots(item);
   if (maxSlots <= 0) {
+    console.warn("[MHH][Runes] installRuneOnItem → NO_RUNE_SLOTS");
     return { ok: false, reason: "NO_RUNE_SLOTS" };
   }
   if (runes.length >= maxSlots) {
+    console.warn("[MHH][Runes] installRuneOnItem → NO_FREE_RUNE_SLOT");
     return { ok: false, reason: "NO_FREE_RUNE_SLOT" };
   }
 
@@ -536,6 +607,8 @@ export async function installRuneOnItem(item, runeItem) {
   await runeItem.setFlag(MODULE_ID, FLAGS.RUNE_SOCKET_HOST, item.uuid);
   await applyRuneEffectsToItem(item);
 
+  console.log("[MHH][Runes] installRuneOnItem(RETURN) → INSTALLED");
+
   return {
     ok: true,
     reason: "INSTALLED",
@@ -543,6 +616,7 @@ export async function installRuneOnItem(item, runeItem) {
     total: runes.length
   };
 }
+
 
 /**
  * Remove runas do item.

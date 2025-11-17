@@ -21,7 +21,7 @@ function itemIsArmorLike(item) {
 
   const sys = item.system ?? {};
 
-  // 1) Tipos clássicos de armadura/escudo do dnd5e
+  // Tipos clássicos de armadura/escudo do dnd5e
   const armorTypes = ["light", "medium", "heavy", "shield"];
   const typeValue = sys.type?.value?.toLowerCase?.() ?? "";
   const baseItem  = sys.type?.baseItem?.toLowerCase?.() ?? "";
@@ -29,24 +29,41 @@ function itemIsArmorLike(item) {
   if (armorTypes.includes(typeValue)) return true;
   if (armorTypes.includes(baseItem))  return true;
 
-  // 2) Propriedade típica de escudo (sistemas que marcam com "shd")
+  // Propriedade típica de escudo
   if (Array.isArray(sys.properties) && sys.properties.includes("shd")) {
     return true;
   }
 
-  // 3) Se tiver um AC explícito (> 0), também tratamos como armadura
+  // Se tiver AC explícito (> 0), tratamos como armor
   const armorValue = Number(sys.armor?.value ?? 0);
   if (armorValue > 0) return true;
 
-  // Se chegou até aqui: não é armor-like
   return false;
 }
 
-
 function itemIsFocusLike(item) {
-  // qualquer equipment que não seja armor/escudo
-  return item?.type === "equipment" && !itemIsArmorLike(item);
+  if (!item || item.type !== "equipment") return false;
+
+  const sys   = item.system ?? {};
+  const props = Array.isArray(sys.properties) ? sys.properties : [];
+
+  const isFoc = props.includes("foc");
+  const armor = itemIsArmorLike(item);
+
+  console.log("[MHH][Runes] itemIsFocusLike", {
+    itemName: item.name,
+    type: item.type,
+    typeValue: sys.type?.value,
+    baseItem: sys.type?.baseItem,
+    props,
+    isFoc,
+    armor
+  });
+
+  // Tem que ter "foc" e NÃO ser armor-like
+  return isFoc && !armor;
 }
+
 
 /* -------------------------------------------- */
 /*  Helpers de Rarity / Slots                   */
