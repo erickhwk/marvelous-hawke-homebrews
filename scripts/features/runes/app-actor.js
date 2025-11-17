@@ -49,27 +49,18 @@ function itemIsArmorLike(item) {
  * Foco arcano = equipment com "foc" nas properties e NÃO armor-like
  */
 function itemIsFocusLike(item) {
-  if (!item || item.type !== "equipment") return false;
+  const propsRaw = item?.system?.properties;
 
-  const sys   = item.system ?? {};
-  const props = Array.isArray(sys.properties) ? sys.properties : [];
+  // Normaliza para array SEMPRE
+  const props = Array.isArray(propsRaw)
+    ? propsRaw
+    : propsRaw instanceof Set
+      ? Array.from(propsRaw)
+      : [];
 
-  const isFoc = props.includes("foc");
-  const armor = itemIsArmorLike(item);
-
-  // Debug mínimo para entender classificação de foco
-  console.debug("[MHH][Runes][UI] itemIsFocusLike", {
-    itemName: item.name,
-    type: item.type,
-    typeValue: sys.type?.value,
-    baseItem: sys.type?.baseItem,
-    props,
-    isFoc,
-    armor
-  });
-
-  return isFoc && !armor;
+  return props.includes("foc");
 }
+
 
 /* -------------------------------------------- */
 /*  Helpers de estado / labels                  */
