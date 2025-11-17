@@ -179,6 +179,11 @@ export function getPrimaryAttackActivitySource(item) {
 export async function applyRuneEffectsToItem(item) {
   if (!item) return;
 
+  if (item.type !== "weapon") {
+    console.debug("[MHH][Runes] applyRuneEffectsToItem ignorado para item não-arma:", item.name);
+    return;
+  }
+
   const runes   = getItemRunes(item);
   const actInfo = getPrimaryAttackActivitySource(item);
   if (!actInfo) return;
