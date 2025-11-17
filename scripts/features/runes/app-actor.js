@@ -5,7 +5,8 @@ import {
   getItemRunes,
   setItemRunes,
   installRuneOnItem,
-  applyRuneEffectsToItem
+  applyRuneEffectsToItem,
+  getMaxRuneSlots
 } from "./service.js";
 
 /* -------------------------------------------- */
@@ -16,6 +17,9 @@ function itemIsWeapon(item) {
   return item?.type === "weapon";
 }
 
+/**
+ * Mesma lógica do service.js: o que conta como ARMOR/SHIELD
+ */
 function itemIsArmorLike(item) {
   if (!item || item.type !== "equipment") return false;
 
@@ -41,6 +45,9 @@ function itemIsArmorLike(item) {
   return false;
 }
 
+/**
+ * Foco arcano = equipment com "foc" nas properties e NÃO armor-like
+ */
 function itemIsFocusLike(item) {
   if (!item || item.type !== "equipment") return false;
 
@@ -50,7 +57,8 @@ function itemIsFocusLike(item) {
   const isFoc = props.includes("foc");
   const armor = itemIsArmorLike(item);
 
-  console.log("[MHH][Runes] itemIsFocusLike", {
+  // Debug mínimo para entender classificação de foco
+  console.debug("[MHH][Runes][UI] itemIsFocusLike", {
     itemName: item.name,
     type: item.type,
     typeValue: sys.type?.value,
@@ -60,13 +68,11 @@ function itemIsFocusLike(item) {
     armor
   });
 
-  // Tem que ter "foc" e NÃO ser armor-like
   return isFoc && !armor;
 }
 
-
 /* -------------------------------------------- */
-/*  Helpers de Rarity / Slots                   */
+/*  Helpers de estado / labels                  */
 /* -------------------------------------------- */
 
 function normalizeRarity(raw) {
@@ -77,7 +83,7 @@ function normalizeRarity(raw) {
   }
 
   const s = String(raw).toLowerCase().replace(/\s+/g, "");
-  if (s === "rarity") return "common";
+  if (s === "rarity") return "common"; // valor default do select
   if (s === "uncommon") return "uncommon";
   if (s === "rare") return "rare";
   if (s === "veryrare" || s === "very_rare") return "very-rare";
@@ -95,27 +101,6 @@ function rarityLabel(raw) {
     default:          return "Common";
   }
 }
-
-function getMaxRuneSlotsForUI(item) {
-  const rarityRaw = item?.system?.rarity ?? "common";
-  const rarity = normalizeRarity(rarityRaw);
-
-  switch (rarity) {
-    case "uncommon":
-    case "rare":
-      return 1;
-    case "very-rare":
-      return 2;
-    case "legendary":
-      return 3;
-    default:
-      return 0;
-  }
-}
-
-/* -------------------------------------------- */
-/*  Helpers de estado                            */
-/* -------------------------------------------- */
 
 function isItemEquipped(item) {
   const eq = item.system?.equipped;
@@ -166,7 +151,8 @@ export class ActorRunesConfig extends Application {
     const defensiveItems = [];
 
     for (const item of actor.items) {
-      const maxSlots = getMaxRuneSlotsForUI(item);
+      // slots = mesma lógica do service.js
+      const maxSlots = getMaxRuneSlots(item);
       if (maxSlots <= 0) continue;
 
       const runes = getItemRunes(item);
@@ -191,9 +177,23 @@ export class ActorRunesConfig extends Application {
         slots
       };
 
-      if (itemIsArmorLike(item)) {
+      const armorLike  = itemIsArmorLike(item);
+      const weaponLike = itemIsWeapon(item);
+      const focusLike  = itemIsFocusLike(item);
+
+      console.debug("[MHH][Runes][UI] classify item", {
+        itemName: item.name,
+        type: item.type,
+        rarity: item.system?.rarity,
+        armorLike,
+        weaponLike,
+        focusLike,
+        maxSlots
+      });
+
+      if (armorLike) {
         defensiveItems.push(row);
-      } else if (itemIsWeapon(item) || itemIsFocusLike(item)) {
+      } else if (weaponLike || focusLike) {
         offensiveItems.push(row);
       }
     }
@@ -228,11 +228,9 @@ export class ActorRunesConfig extends Application {
 
       runes.splice(slotIdx, 1);
       await setItemRunes(item, runes);
-      await applyRuneEffectsToItem(item);
+      await applyRuneEffectsToItem(item); // ofensivas em arma
 
-      // NÃO recalcula runas defensivas aqui.
-      // updateItem → index.js → applyDefensiveRunesToActor.
-
+      // efeitos defensivos/arcanos são recalculados pelo hook updateItem
       this.render(true);
     });
 
@@ -267,6 +265,11 @@ export class ActorRunesConfig extends Application {
       const itemId = rowEl.dataset.itemId;
       const item   = this.actor.items.get(itemId);
       if (!item) return;
+
+      console.debug("[MHH][Runes][UI] drop rune", {
+        runeName: runeItem.name,
+        itemName: item.name
+      });
 
       const result = await installRuneOnItem(item, runeItem);
 
