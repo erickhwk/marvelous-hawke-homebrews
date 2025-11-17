@@ -1,4 +1,5 @@
 <form class="mhh-runes-actor flexcol" autocomplete="off">
+
   <section class="mhh-runes-body flexcol">
 
     <header class="mhh-runes-header">
@@ -14,12 +15,13 @@
     {{#if offensiveItems.length}}
       {{#each offensiveItems as |row|}}
         <div class="mhh-runes-item-row flexrow" data-item-id="{{row.id}}">
-          <!-- Coluna 1: ícone -->
+
+          <!-- Ícone -->
           <div class="mhh-runes-item-row__icon">
             <img src="{{row.img}}" width="32" height="32" />
           </div>
 
-          <!-- Coluna 2: infos -->
+          <!-- Informações -->
           <div class="mhh-runes-item-row__info flexcol">
             <div class="mhh-runes-item-row__name">{{row.name}}</div>
             <div class="mhh-runes-item-row__meta small">
@@ -32,29 +34,57 @@
             </div>
           </div>
 
-          <!-- Coluna 3: slots -->
-          <div class="mhh-runes-item-row__slots flexcol" style="min-width: 160px; align-items: flex-start;">
+          <!-- Slots -->
+          <div class="mhh-runes-item-row__slots flexcol" style="min-width:160px; align-items:flex-start;">
             {{#if row.slots.length}}
               {{#each row.slots as |slot|}}
+
                 <div class="mhh-runes-slot" data-slot-index="{{slot.index}}">
+
                   {{#if slot.rune}}
+
+                    <!-- Slot preenchido -->
                     <div class="mhh-runes-slot__content">
-                      <span class="mhh-runes-slot__label">
-                        {{slot.label}}
-                      </span>
+                      <span class="mhh-runes-slot__label">{{slot.label}}</span>
+
                       <a class="mhh-runes-slot__remove"
                          data-action="remove"
-                         data-item-id="{{../row.id}}"
+                         data-item-id="{{../id}}"
                          data-slot="{{slot.index}}">
                         <i class="fas fa-trash"></i>
                       </a>
                     </div>
+
                   {{else}}
-                    <div class="mhh-runes-slot__empty">
-                      <span class="mhh-runes-slot__label">Slot vazio</span>
+
+                    <!-- Slot vazio → SELECT -->
+                    <div class="mhh-runes-slot__empty flexrow">
+
+                      <select class="mhh-runes-slot-select"
+                              data-item-id="{{../id}}"
+                              data-slot="{{slot.index}}">
+                        <option value="">— Escolha uma runa —</option>
+
+                        {{#each @root.offensiveRunes as |rChoice|}}
+                          <option value="{{rChoice.id}}">
+                            {{rChoice.label}}
+                          </option>
+                        {{/each}}
+                      </select>
+
+                      <button type="button"
+                              class="mhh-runes-slot-apply"
+                              data-item-id="{{../id}}"
+                              data-slot="{{slot.index}}">
+                        <i class="fas fa-check"></i>
+                      </button>
+
                     </div>
+
                   {{/if}}
+
                 </div>
+
               {{/each}}
             {{else}}
               <span class="notes small">Sem slots de runa.</span>
@@ -74,12 +104,13 @@
     {{#if defensiveItems.length}}
       {{#each defensiveItems as |row|}}
         <div class="mhh-runes-item-row flexrow" data-item-id="{{row.id}}">
-          <!-- Coluna 1: ícone -->
+
+          <!-- Ícone -->
           <div class="mhh-runes-item-row__icon">
             <img src="{{row.img}}" width="32" height="32" />
           </div>
 
-          <!-- Coluna 2: infos -->
+          <!-- Informações -->
           <div class="mhh-runes-item-row__info flexcol">
             <div class="mhh-runes-item-row__name">{{row.name}}</div>
             <div class="mhh-runes-item-row__meta small">
@@ -92,34 +123,63 @@
             </div>
           </div>
 
-          <!-- Coluna 3: slots -->
-          <div class="mhh-runes-item-row__slots flexcol" style="min-width: 160px; align-items: flex-start;">
+          <!-- Slots -->
+          <div class="mhh-runes-item-row__slots flexcol" style="min-width:160px; align-items:flex-start;">
             {{#if row.slots.length}}
               {{#each row.slots as |slot|}}
+
                 <div class="mhh-runes-slot" data-slot-index="{{slot.index}}">
+
                   {{#if slot.rune}}
+
+                    <!-- Slot preenchido -->
                     <div class="mhh-runes-slot__content">
-                      <span class="mhh-runes-slot__label">
-                        {{slot.label}}
-                      </span>
+                      <span class="mhh-runes-slot__label">{{slot.label}}</span>
+
                       <a class="mhh-runes-slot__remove"
                          data-action="remove"
-                         data-item-id="{{../row.id}}"
+                         data-item-id="{{../id}}"
                          data-slot="{{slot.index}}">
                         <i class="fas fa-trash"></i>
                       </a>
                     </div>
+
                   {{else}}
-                    <div class="mhh-runes-slot__empty">
-                      <span class="mhh-runes-slot__label">Slot vazio</span>
+
+                    <!-- Slot vazio → SELECT -->
+                    <div class="mhh-runes-slot__empty flexrow">
+
+                      <select class="mhh-runes-slot-select"
+                              data-item-id="{{../id}}"
+                              data-slot="{{slot.index}}">
+                        <option value="">— Escolha uma runa —</option>
+
+                        {{#each @root.defensiveRunes as |rChoice|}}
+                          <option value="{{rChoice.id}}">
+                            {{rChoice.label}}
+                          </option>
+                        {{/each}}
+                      </select>
+
+                      <button type="button"
+                              class="mhh-runes-slot-apply"
+                              data-item-id="{{../id}}"
+                              data-slot="{{slot.index}}">
+                        <i class="fas fa-check"></i>
+                      </button>
+
                     </div>
+
                   {{/if}}
+
                 </div>
+
               {{/each}}
             {{else}}
               <span class="notes small">Sem slots de runa.</span>
             {{/if}}
           </div>
+
         </div>
       {{/each}}
     {{else}}
@@ -128,9 +188,10 @@
 
     <footer class="mhh-runes-actor__footer">
       <p class="notes small">
-        Dica: arraste runas do inventário para a linha de um item para instalá-las.
-        Clique na lixeira ao lado de uma runa para removê-la.
+        Dica: selecione uma runa no slot desejado para instalá-la.
+        Use o ícone de lixo para remover runas já instaladas.
       </p>
     </footer>
+
   </section>
 </form>

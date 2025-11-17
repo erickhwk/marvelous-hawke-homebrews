@@ -17,9 +17,6 @@ function itemIsWeapon(item) {
   return item?.type === "weapon";
 }
 
-/**
- * Mesma lógica do service.js: o que conta como ARMOR/SHIELD
- */
 function itemIsArmorLike(item) {
   if (!item || item.type !== "equipment") return false;
 
@@ -116,7 +113,6 @@ export class ActorRunesConfig extends foundry.applications.api.HandlebarsApplica
     this.parentApp = parentApp;
   }
 
-  // Tema / layout igual ao Adjustment V2
   static DEFAULT_OPTIONS = {
     id: "mhh-actor-runes-config",
     title: "Runas do Personagem",
@@ -125,24 +121,52 @@ export class ActorRunesConfig extends foundry.applications.api.HandlebarsApplica
     height: "auto",
     resizable: true,
     window: {
-      contentClasses: ["standard-form"] // <- isso tira o parchment e puxa o tema dark de sheet
+      contentClasses: ["standard-form"]
     }
   };
 
-  // Um único "part" com o template inteiro das runas
   static PARTS = {
     body: { template: TEMPLATES.RUNES_ACTOR }
   };
 
   /**
    * Prepara o contexto usado pelo template Handlebars.
-   * Equivalente ao antigo getData, mas no modelo ApplicationV2.
    */
   async _prepareContext(_options) {
     const actor = this.actor;
     const offensiveItems = [];
     const defensiveItems = [];
 
+    // Runas disponíveis no inventário do ator (para os selects)
+    const offensiveRunes = [];
+    const defensiveRunes = [];
+
+    for (const it of actor.items) {
+      const category = it.getFlag(MODULE_ID, "runeCategory");
+      const subtype  = it.getFlag(MODULE_ID, "runeSubtype");
+      const tier     = it.getFlag(MODULE_ID, "runeTier");
+      const dmgType  = it.getFlag(MODULE_ID, "runeDamageType");
+
+      if (category && subtype && tier) {
+        const labelParts = [tier, subtype];
+        if (dmgType) labelParts.push(`(${dmgType})`);
+
+        const entry = {
+          id: it.id,
+          name: it.name,
+          category,
+          subtype,
+          tier,
+          damageType: dmgType,
+          label: `${it.name} – ${labelParts.join(" ")}`
+        };
+
+        if (category === "offensive") offensiveRunes.push(entry);
+        if (category === "defensive") defensiveRunes.push(entry);
+      }
+    }
+
+    // Itens que podem receber runas
     for (const item of actor.items) {
       const maxSlots = getMaxRuneSlots(item);
       if (maxSlots <= 0) continue;
@@ -193,13 +217,14 @@ export class ActorRunesConfig extends foundry.applications.api.HandlebarsApplica
     return {
       actor,
       offensiveItems,
-      defensiveItems
+      defensiveItems,
+      offensiveRunes,
+      defensiveRunes
     };
   }
 
   /**
-   * No ApplicationV2, em vez de activateListeners(html),
-   * usamos _replaceHTML para pegar o root element e plugar os eventos.
+   * ApplicationV2: usamos _replaceHTML para plugar os eventos no root.
    */
   async _replaceHTML(result, options) {
     await super._replaceHTML(result, options);
@@ -211,13 +236,15 @@ export class ActorRunesConfig extends foundry.applications.api.HandlebarsApplica
     root.dataset.mhhDelegated = "1";
 
     /* ------------------------------
-       Remover runa de um slot
+       Delegação: Remover runa de um slot
     ------------------------------ */
-    root.querySelectorAll(".mhh-runes-slot__remove").forEach(btn => {
-      btn.addEventListener("click", async ev => {
+    root.addEventListener("click", async ev => {
+      const removeBtn = ev.target.closest(".mhh-runes-slot__remove");
+      if (removeBtn) {
         ev.preventDefault();
-        const itemId  = btn.dataset.itemId;
-        const slotIdx = Number(btn.dataset.slot);
+
+        const itemId  = removeBtn.dataset.itemId;
+        const slotIdx = Number(removeBtn.dataset.slot);
 
         const item = this.actor.items.get(itemId);
         if (!item) return;
@@ -227,83 +254,86 @@ export class ActorRunesConfig extends foundry.applications.api.HandlebarsApplica
 
         runes.splice(slotIdx, 1);
         await setItemRunes(item, runes);
-        await applyRuneEffectsToItem(item); // ofensivas em arma; defensivas/arcanas via service
+        await applyRuneEffectsToItem(item);
 
-        // Re-render da janela
         this.render(true);
-      });
-    });
-
-    /* ------------------------------
-       Drag & Drop de runa na linha
-    ------------------------------ */
-
-    root.addEventListener("dragover", ev => {
-      ev.preventDefault();
-      ev.dataTransfer.dropEffect = "copy";
-    });
-
-    root.addEventListener("drop", async ev => {
-      ev.preventDefault();
-
-      let data;
-      try {
-        data = JSON.parse(ev.dataTransfer.getData("text/plain"));
-      } catch {
         return;
       }
 
-      if (data.type !== "Item" || !data.uuid) return;
+      const applyBtn = ev.target.closest(".mhh-runes-slot-apply");
+      if (applyBtn) {
+        ev.preventDefault();
 
-      const runeItem = await fromUuid(data.uuid).catch(() => null);
-      if (!runeItem) return;
+        const itemId  = applyBtn.dataset.itemId;
+        const slotIdx = Number(applyBtn.dataset.slot);
 
-      const rowEl = ev.target.closest(".mhh-runes-item-row");
-      if (!rowEl) return;
-      const itemId = rowEl.dataset.itemId;
-      const item   = this.actor.items.get(itemId);
-      if (!item) return;
+        const item = this.actor.items.get(itemId);
+        if (!item) return;
 
-      console.debug("[MHH][Runes][UI] drop rune", {
-        runeName: runeItem.name,
-        itemName: item.name
-      });
+        const select = root.querySelector(
+          `.mhh-runes-slot-select[data-item-id="${itemId}"][data-slot="${slotIdx}"]`
+        );
+        if (!select) return;
 
-      const result = await installRuneOnItem(item, runeItem);
-
-      if (!result?.ok) {
-        const reason = result.reason;
-        if (reason === "RUNE_WEAKER_OR_EQUAL_EXISTS") {
-          const existing = result.existing;
-          ui.notifications.warn(
-            `O item ${item.name} já tem uma runa ${existing.runeTier} ${existing.runeSubtype} igual ou melhor.`
-          );
-        } else if (reason === "ITEM_NOT_COMPATIBLE") {
-          ui.notifications.error(`${runeItem.name} não é compatível com ${item.name}.`);
-        } else if (reason === "RUNE_ALREADY_SOCKETED") {
-          ui.notifications.error(
-            `${runeItem.name} já está encaixada em outro item. Remova de lá antes.`
-          );
-        } else if (reason === "NO_RUNE_SLOTS") {
-          ui.notifications.error(`${item.name} não possui slots de runa (raridade muito baixa).`);
-        } else if (reason === "NO_FREE_RUNE_SLOT") {
-          ui.notifications.error(`${item.name} já está com todos os slots de runa preenchidos.`);
-        } else {
-          ui.notifications.error(
-            `Falha ao instalar runa em ${item.name}. Motivo: ${reason ?? "desconhecido"}.`
-          );
+        const runeId = select.value;
+        if (!runeId) {
+          ui.notifications.warn("Selecione uma runa primeiro.");
+          return;
         }
-      } else {
-        if (result.reason === "REPLACED_WEAKER") {
-          ui.notifications.info(
-            `${runeItem.name} instalada em ${item.name}, substituindo uma runa mais fraca.`
-          );
-        } else {
-          ui.notifications.info(`${runeItem.name} instalada em ${item.name}.`);
+
+        // As runas vivem no inventário do ator
+        const runeItem = this.actor.items.get(runeId)
+          ?? game.items?.get(runeId);
+        if (!runeItem) {
+          ui.notifications.error("Não foi possível encontrar o item de runa selecionado.");
+          return;
         }
+
+        console.debug("[MHH][Runes][UI] apply via select", {
+          runeName: runeItem.name,
+          itemName: item.name,
+          slotIdx
+        });
+
+        const result = await installRuneOnItem(item, runeItem);
+
+        if (!result?.ok) {
+          const reason = result.reason;
+          if (reason === "RUNE_WEAKER_OR_EQUAL_EXISTS") {
+            const existing = result.existing;
+            ui.notifications.warn(
+              `O item ${item.name} já tem uma runa ${existing.runeTier} ${existing.runeSubtype} igual ou melhor.`
+            );
+          } else if (reason === "ITEM_NOT_COMPATIBLE") {
+            ui.notifications.error(`${runeItem.name} não é compatível com ${item.name}.`);
+          } else if (reason === "RUNE_ALREADY_SOCKETED") {
+            ui.notifications.error(
+              `${runeItem.name} já está encaixada em outro item. Remova de lá antes.`
+            );
+          } else if (reason === "NO_RUNE_SLOTS") {
+            ui.notifications.error(`${item.name} não possui slots de runa (raridade muito baixa).`);
+          } else if (reason === "NO_FREE_RUNE_SLOT") {
+            ui.notifications.error(`${item.name} já está com todos os slots de runa preenchidos.`);
+          } else {
+            ui.notifications.error(
+              `Falha ao instalar runa em ${item.name}. Motivo: ${reason ?? "desconhecido"}.`
+            );
+          }
+        } else {
+          if (result.reason === "REPLACED_WEAKER") {
+            ui.notifications.info(
+              `${runeItem.name} instalada em ${item.name}, substituindo uma runa mais fraca.`
+            );
+          } else {
+            ui.notifications.info(`${runeItem.name} instalada em ${item.name}.`);
+          }
+        }
+
+        this.render(true);
       }
-
-      this.render(true);
     });
+
+    // Drag & drop antigo foi abandonado em favor de select, então não registramos
+    // mais "dragover"/"drop" aqui.
   }
 }
