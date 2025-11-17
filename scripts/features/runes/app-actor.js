@@ -1,13 +1,17 @@
+// modules/marvelous-hawke-homebrews/scripts/features/runes/app-actor.js
+
 import { MODULE_ID, TEMPLATES } from "../../core/constants.js";
 import {
   getItemRunes,
   setItemRunes,
   installRuneOnItem,
-  applyRuneEffectsToItem,
-  applyDefensiveRunesToActor
+  applyRuneEffectsToItem
 } from "./service.js";
 
-/** Helpers de tipo de item (duplicados localmente pra não bagunçar o service) */
+/* -------------------------------------------- */
+/*  Helpers de tipo de item                     */
+/* -------------------------------------------- */
+
 function itemIsWeapon(item) {
   return item?.type === "weapon";
 }
@@ -28,7 +32,10 @@ function itemIsFocusLike(item) {
   return item?.type === "equipment" && !itemIsArmorLike(item);
 }
 
-/** Mesma lógica de rarity/slots que usamos no service */
+/* -------------------------------------------- */
+/*  Helpers de Rarity / Slots                   */
+/* -------------------------------------------- */
+
 function normalizeRarity(raw) {
   if (!raw) return "common";
 
@@ -73,6 +80,10 @@ function getMaxRuneSlotsForUI(item) {
   }
 }
 
+/* -------------------------------------------- */
+/*  Helpers de estado                            */
+/* -------------------------------------------- */
+
 function isItemEquipped(item) {
   const eq = item.system?.equipped;
   if (typeof eq === "boolean") return eq;
@@ -89,8 +100,12 @@ function makeRuneLabel(r) {
   return `${cat} · ${sub} · ${tier}${elem}`;
 }
 
+/* -------------------------------------------- */
+/*  Classe principal: ActorRunesConfig          */
+/* -------------------------------------------- */
+
 export class ActorRunesConfig extends Application {
-  /** @param {Actor} actor */
+
   constructor(actor, options = {}) {
     super(options);
     this.actor = actor;
@@ -108,6 +123,9 @@ export class ActorRunesConfig extends Application {
     });
   }
 
+  /* -------------------------------------------- */
+  /*  getData                                     */
+  /* -------------------------------------------- */
   getData(options = {}) {
     const actor = this.actor;
 
@@ -154,10 +172,15 @@ export class ActorRunesConfig extends Application {
     };
   }
 
+  /* -------------------------------------------- */
+  /*  activateListeners                            */
+  /* -------------------------------------------- */
   activateListeners(html) {
     super.activateListeners(html);
 
-    // Remover runa de um slot
+    /* ------------------------------
+       Remover uma runa do slot
+    ------------------------------ */
     html.find(".mhh-runes-slot__remove").on("click", async ev => {
       ev.preventDefault();
       const btn     = ev.currentTarget;
@@ -170,16 +193,20 @@ export class ActorRunesConfig extends Application {
       const runes = getItemRunes(item);
       if (!Array.isArray(runes) || !runes[slotIdx]) return;
 
-      // remove pelo índice
       runes.splice(slotIdx, 1);
       await setItemRunes(item, runes);
       await applyRuneEffectsToItem(item);
-      await applyDefensiveRunesToActor(this.actor);
+
+      // NÃO recalcula runas defensivas aqui.
+      // updateItem → index.js → applyDefensiveRunesToActor.
 
       this.render(true);
     });
 
-    // Drag & Drop de runas (cai na linha do item)
+    /* ------------------------------
+       Drag & Drop de runa
+    ------------------------------ */
+
     const root = html[0];
 
     root.addEventListener("dragover", ev => {
@@ -202,7 +229,6 @@ export class ActorRunesConfig extends Application {
       const runeItem = await fromUuid(data.uuid).catch(() => null);
       if (!runeItem) return;
 
-      // descobrir em qual linha de item caiu
       const rowEl = ev.target.closest(".mhh-runes-item-row");
       if (!rowEl) return;
       const itemId = rowEl.dataset.itemId;
